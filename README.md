@@ -1,186 +1,65 @@
-# Rover Two
+# RoverTwo
+
+_Saving time for **you**._
+
+## What does it do?
+
+`RoverTwo` is an opinionated route optimizer. It attempts to find the lowest-cost route for X `Workers` to visit Y `Jobs`, while making some simple assumptions:
+
+- Each `Worker`...
+  - starts at a `Hub` and will return to a `Hub` at the end of their route
+    - the starting and ending `Hub` need not be the same
+  - carries a specific set of `Tools` as they travel between `Jobs`
+  - has `Capabilities` describing how efficient they are at using a given `Tool`
+  - may be explicitly denied eligibility to visit any `Job`
+- Each `Job`...
+  - must be visited exactly once by one `Worker` within a specific `ArrivalWindow`
+  - comprises one or more `Tasks`
+- Each `Task`...
+  - requires a specific `Tool`, without which it cannot be performed
+  - has a `Reward`, which results in a reduced cost if it is completed
+- Each `Tool`...
+  - takes a minimum amount of time to use, which can be altered by a `Capability`
+  - has an average rate at which it is used to complete a `Task` (100% unless otherwise specified)
+  - with a 100% completion rate must be represented by a `Capability` in order for that `Worker` to be eligible to visit a `Job` where that `Tool` is required for a `Task`
+- Any combination of `Time`, `Distance` & `Value` can be factored into the route cost
+  - An arbitrary amount of custom cost `Factors` can also be considered
+- Each `Factor` has a `Weight`, which determines how relatively important it is to the overall route cost
+
+## What does it output?
+
+A list of `Visit` objects, each having:
+
+- `PlaceId`
+- `WorkerId`
+- `ArrivalTime`
+- `DepartureTime`
+- `Rewards`
+
+## TODO
+
+- more tests
+  - helper method that creates a basic test which can be mutated
+- everything is an entity with an id (ideally guid)
+  - use dictionaries by default, with some interface that suggests the id comes from the key
+- finalize result output (hash input to name file?)
+  - return worktime in results
+  - total travel time
+  - total distance
+  - total reward
+  - total work time
+  - total cost?
+  - cost per visit/worker?
+  - R/R ratio?
+  - completion %
+  - per-visit itemized task completion
+- worker break times
+- per-worker reward factor
+- per-task completion rate
+- validate custom risks/rewards on workers
+- allow null-place (applies to all) custom metrics
+- validate custom metrics all > 0
+- allow a place to be marked as "must visit, by any vehicle" vs only specific vehicles
+- place sequences (one worker must visit all with no deviation)
+- traveltime -> duration where possible
 
-This is a vehicle route optimization proof-of-concept, featuring time windows and (a custom implementation of) capacity.
-
-It is essentially the [Travelling Salesman Problem](https://developers.google.com/optimization/routing/tsp) with many salespeople -- somewhat like a multiplayer game of Snake!
-
-Travel times are calculated as the crow files -- this may be changed to use real drive time in future.
-
-Costs are a accrued by way of workers performing their tasks; costs can be specific based on a combination of worker and job.
-
-If no explicit cost factors are supplied, only the travel time between nodes will be considered.
-
-## Tech
-
-This project leverages [Google OR-Tools](https://developers.google.com/optimization/).
-
-## Problem
-
-A problem consists of multiple jobs over the course of a given day, and one or more workers, each equipped with one or more tools (stored in their vehicle).
-
-Workers use tools at jobs to complete tasks; jobs have time windows in which the worker must begin work, and may require different tools to complete.
-
-The aim is bifold: find a permutation of workers & tools that can complete a minimum percentage of the available work (at least all required tasks), and then minimize the cost to do so.
-
-`Problem` has the following attributes, mostly loaded from a user input by way of a flat file or a request:
-
-- `Value Unit`: optional string
-  - Default: "Value"
-  - e.g. revenue (used in this document)
-- `T Zero`: timestamp
-  - Default: now
-  - The reference point for all other times in the problem
-- `Workers`: list of `Worker` objects
-  - Must contain at least 1 item
-- `Jobs`: list of `Job` objects
-  - Each has a list list of `Task` objects
-  - Must contain at least 1 item
-- `Tools`: list of `Tool` objects
-  - Must contain at least 1 item
-
-## Window
-
-This class is used to define a time box in which an evert must occur.
-
-`Window` has the following attributes:
-
-- `Open`: timestamp
-- `Close`: timestamp
-
-## Nodes
-
-Generic locations within the problem, which can be visited by workers.
-
-`Node` has the following attributes:
-
-- `Id`: required string
-  - Must be unique among all nodes
-- `Name`: optional string
-  - Defaults to `Id` if omitted
-- `Location`: required
-
-Jobs and hubs are different types of nodes.
-
-### Location
-
-`Location` has the following properties:
-
-- `X`: decimal
-  - .e.g latitude
-- `Y`: decimal
-  - e.g. longitude
-
-### Jobs
-
-A `Job` is a subclass of `Node` and has the following additional attributes:
-
-- `ArrivalWindow`: `Window`
-  - The time box within which the worker must arrive on-site
-- `Tasks`: list of `Task` instances
-  - Informs the type and quantity of tools a worker must bring to complete the job for maximum revenue
-  - Includes both optional and required work
-
-#### Tasks
-
-Units of work to be completed by a worker at a `Job` in order to generate revenue.
-
-`Task` has the following attributes:
-
-- `Tool Id`
-  - Must be among the worker's `Capabilities` for them to be able to complete the work
-- `Name`: required string
-- `Value`: decimal
-  - Contributes to the worker's total revenue at the end of the problem, assuming they complete the task
-- `Optional`: boolean
-  - Defaults to `false`
-  - If a task is not optional, it must be finished before the worker can move on
-
-### Hubs
-
-A `Hub` is a subclass of `Node`, with no additional attributes, used for organization.
-
-Each worker starts their day at one of these.
-
-## Workers
-
-Workers begin their day at their hub, travel to jobs throughout the day, then return to their hub.
-
-`Worker` has the following attributes:
-
-- `Id`: required string
-  - Must be unique among all workers
-- `Name`: optional string
-  - Will default to `Id` if omitted
-- `Hub Id`: required
-  - Refers to a `Node`
-- `Capabilities`: list of `Capability`
-
-When a worker transits to a job, they spend travel time to get there.
-
-When a worker transits from a job, they spend time using their tools to complete tasks and generate revenue before they leave.
-
-A worker cannot be assigned to a job for which they lack the required tools.
-
-### Capabilities
-
-These combine two concepts:
-
-- the quantities of tools the worker has at the start of their route, dictating the number of jobs they can complete
-- the worker's individual proficiency with that type of tool, dictating how long it takes them to use it
-
-A `Capability` has the following attributes:
-
-- `Tool Id`
-- `Quantity`: integer
-  - Must be > 1
-  - Determines the number of jobs the `Worker` can complete using this type of tool
-- `Delay Factor`: decimal
-  - Default: 1
-  - Must be >= 0
-  - Multiplied by the `Delay` when this tool type is used by the `Worker`
-    - a value of of 0 makes the tool use instant
-    - a value of of >1 makes the tool take longer to use than normal
-
-## Tools
-
-Tools are assigned per worker, carried to jobs in their vehicle, and consumed when used (each is single-use).
-
-A tool has the following attributes:
-
-- `Id`: required string
-  - Must be unique among all tools
-  - Represents the type of tool, e.g. "shovel" or "sword"
-- `Name`: optional string
-  - Default: `Id`
-- `Delay`: optional integer
-  - Default: 1
-  - Must be >= 1
-  - The base time spent when a worker uses this tool
-
-## Distance
-
-Simple geometry is used to calculate distances between nodes on our sample Cartesian plane.
-
-## Costs
-
-We use a different cost evaluator per vehicle. By default, costs is equal to time spent, but other factors can be added dynamically, with custom weights.
-
-Costs are defined by a worker & job pair.
-
-## Outcome
-
-After a `Problem` has been solved, the output will contain:
-
-- Each worker's ETA at each `Node` they visited on their route
-- Total cost of all routes
-- Cost per worker
-
-## Simulation
-
-After solving a problem, it must be rendered to the user in the form of a tick-by-tick sequence of events (frames), showing how each worker performs their duties.
-
-Ideally this would include a simple 2D ASCII grid showing the location of each renderable entity at every tick.
-
-### Ticks
-
-A tick is an arbitrary measure of time. In the context of a `Problem` it will be one second, but this may become configurable.
