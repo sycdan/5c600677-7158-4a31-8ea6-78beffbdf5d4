@@ -12,7 +12,7 @@ public class Location()
 		return $"{X},{Y}";
 	}
 
-	public static Location BuildFrom((double x, double y) coordinates)
+	public static Location From((double x, double y) coordinates)
 	{
 		return new Location { X = coordinates.x, Y = coordinates.y };
 	}

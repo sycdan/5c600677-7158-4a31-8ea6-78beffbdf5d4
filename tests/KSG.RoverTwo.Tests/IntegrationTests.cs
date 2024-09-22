@@ -7,8 +7,8 @@ public class IntegrationTests : TestBase
 	[Fact]
 	public void Problem_FromJson_IsSolvable()
 	{
-		var request = LoadProblemFromFile();
-		var solver = new Solver(request);
+		var problem = LoadProblemFromFile();
+		var solver = new Solver(problem);
 
 		var solution = solver.Solve();
 

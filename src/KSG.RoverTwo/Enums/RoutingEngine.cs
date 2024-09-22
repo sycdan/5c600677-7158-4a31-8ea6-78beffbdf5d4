@@ -8,7 +8,7 @@ public enum RoutingEngine
 	/// <summary>
 	/// Use Manhattan distance & a time factor.
 	/// </summary>
-	Internal,
+	Simple,
 
 	/// <summary>
 	/// Use point-to-point distance & duration by car using OSRM.

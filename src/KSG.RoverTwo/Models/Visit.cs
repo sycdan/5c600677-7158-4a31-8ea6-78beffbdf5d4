@@ -1,20 +1,21 @@
-using Newtonsoft.Json;
 using Serilog;
 
 namespace KSG.RoverTwo.Models;
 
 public class Visit()
 {
-	[JsonIgnore]
-	public required Worker Worker { get; set; }
-	public string WorkerId => Worker.Id;
-
-	[JsonIgnore]
-	public required Place Place { get; init; }
-	public string PlaceId => Place.Id;
+	/// <summary>
+	/// The worker who visited the place.
+	/// </summary>
+	public required Worker Worker { get; init; }
 
 	/// <summary>
-	/// When the worker is expected to arrive at the place.
+	/// The place visited by the worker.
+	/// </summary>
+	public required Place Place { get; init; }
+
+	/// <summary>
+	/// When the worker is arrives at the place.
 	/// Will be set after a solution is found.
 	/// </summary>
 	public DateTimeOffset ArrivalTime { get; set; }
@@ -27,34 +28,37 @@ public class Visit()
 	/// <summary>
 	/// How long did the worker spend at the place.
 	/// </summary>
-	[JsonIgnore]
-	public long WorkSeconds { get; set; }
+	internal long WorkSeconds { get; set; }
+
+	internal Dictionary<Metric, double> EarnedRewards { get; private init; } = [];
 
 	/// <summary>
-	/// Key: costFactorId.
-	/// Value: raw value accrued from completed tasks.
+	/// Simulate the work done by the worker at the place.
+	/// Any compelted task will be rewarded and cost time.
+	/// For each task, if the worker has the required tool,
+	/// there is a random chance to complete the task,
+	/// based on its completion rate (1 == always).
 	/// </summary>
-	public Dictionary<string, double> Rewards { get; init; } = [];
-
-	public void SimulateWork(Dictionary<string, Tool> toolsById)
+	/// <param name="vehicle"></param>
+	public void SimulateWork(Vehicle vehicle)
 	{
 		WorkSeconds = 0;
 		foreach (var task in Place.Tasks)
 		{
-			var tool = toolsById[task.ToolId];
-			var timeSpent = (long)Math.Round(Worker.TimeToUse(tool));
-			if (Random.Shared.NextDouble() < tool.CompletionRate && timeSpent > 0)
+			var tool = task.Tool!;
+			var toolTime = vehicle.ToolTimes[tool];
+			if (Random.Shared.NextDouble() < tool.CompletionRate && toolTime > 0)
 			{
-				WorkSeconds += timeSpent;
-				foreach (var (costFactorId, reward) in task.Rewards)
+				WorkSeconds += toolTime;
+				foreach (var (metric, reward) in task.RewardsByMetric)
 				{
-					Rewards.TryAdd(costFactorId, 0);
-					Rewards[costFactorId] += reward;
+					EarnedRewards.TryAdd(metric, 0);
+					EarnedRewards[metric] += reward * vehicle.RewardFactor(tool, metric);
 				}
 				Log.Verbose(
 					"{worker} spent {timeSpent} seconds on {task} at {job} using {tool} for {reward} rewards",
 					Worker,
-					timeSpent,
+					toolTime,
 					task,
 					Place,
 					tool,
@@ -76,6 +80,6 @@ public class Visit()
 
 	public override string ToString()
 	{
-		return $"{WorkerId} > {PlaceId} @ {ArrivalTime}";
+		return $"{Worker} > {Place} @ {ArrivalTime}";
 	}
 }

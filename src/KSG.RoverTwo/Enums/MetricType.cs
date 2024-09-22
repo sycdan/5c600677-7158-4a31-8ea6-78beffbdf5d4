@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace KSG.RoverTwo.Enums;
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum Metric
+public enum MetricType
 {
 	/// <summary>
 	/// Will pull directly from a worker's custom metrics or task rewards.

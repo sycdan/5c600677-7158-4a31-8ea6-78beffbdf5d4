@@ -14,7 +14,7 @@ public class ProblemTests : TestBase
 		json["places"][1]["id"] = duplicateId;
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
-			Request.BuildFromJson(json.ToString()).Validate();
+			Problem.FromJson(json.ToString()).Validate();
 		});
 		Assert.Contains($"Places#1.Id={duplicateId} is NotUnique", exception.Message);
 	}
@@ -27,7 +27,7 @@ public class ProblemTests : TestBase
 		json["places"][0]["location"] = null;
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
-			Request.BuildFromJson(json.ToString()).Validate();
+			Problem.FromJson(json.ToString()).Validate();
 		});
 		Assert.Contains("Missing", exception.Message);
 	}
@@ -39,7 +39,7 @@ public class ProblemTests : TestBase
 		json["tools"] = null;
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
-			Request.BuildFromJson(json.ToString()).Validate();
+			Problem.FromJson(json.ToString()).Validate();
 		});
 		Assert.Contains("Tools is MissingOrEmpty", exception.Message);
 	}
@@ -51,7 +51,7 @@ public class ProblemTests : TestBase
 		json["tools"][0]["id"] = " ";
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
-			Request.BuildFromJson(json.ToString()).Validate();
+			Problem.FromJson(json.ToString()).Validate();
 		});
 		Assert.Contains("Tools#0.Id is Empty", exception.Message);
 	}
@@ -64,7 +64,7 @@ public class ProblemTests : TestBase
 		json["tools"][1]["id"] = duplicateId;
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
-			Request.BuildFromJson(json.ToString()).Validate();
+			Problem.FromJson(json.ToString()).Validate();
 		});
 		Assert.Contains($"Tools#1.Id={duplicateId} is NotUnique", exception.Message);
 	}

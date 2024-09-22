@@ -36,6 +36,10 @@ A list of `Visit` objects, each having:
 - `DepartureTime`
 - `Rewards`
 
+## Notes
+
+All `Id` values should be unique within the scope of the problem being solved, and composed of lowercase alphanumerics and dashes.
+
 ## TODO
 
 - more tests

@@ -30,8 +30,8 @@ public class Program
 				.WithParsed<Options>(o =>
 				{
 					Log.Debug("Args: {Args}", JsonSerializer.Serialize(o));
-					var request = LoadData(o.File);
-					var solver = new Solver(request);
+					var problem = LoadData(o.File);
+					var solver = new Solver(problem);
 					var response = solver.Solve();
 					// TODO save response to file
 					Solver.Render(response, o.Pretty);
@@ -66,13 +66,13 @@ public class Program
 		Log.Logger = new LoggerConfiguration().MinimumLevel.ControlledBy(levelSwitch).WriteTo.Console().CreateLogger();
 	}
 
-	private static Request LoadData(string filePath)
+	private static Problem LoadData(string filePath)
 	{
 		try
 		{
 			Log.Information("loading data from: {FilePath}", filePath);
 			string jsonData = File.ReadAllText(filePath);
-			return Request.BuildFromJson(jsonData);
+			return Problem.FromJson(jsonData);
 		}
 		catch (JsonException ex)
 		{

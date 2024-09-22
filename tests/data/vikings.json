@@ -1,8 +1,8 @@
 {
 	"tZero": "1997-08-29T00:00:00-07:00",
 	"defaultTravelSpeed": 50,
-	"distanceUnit": "fathom",
-	"timeUnit": "minute",
+	"distanceUnit": "Fathom",
+	"timeUnit": "Minute",
 	"distanceFactor": 1.82,
 	"timeFactor": 60,
 	"places": [
@@ -57,23 +57,42 @@
 				{
 					"toolId": "punch",
 					"name": "Boop the snoot",
-					"rewards": {
-						"glory": 10
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 10
+						}
+					]
+				},
+				{
+					"toolId": "sword1",
+					"name": "Boop the snoot2",
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 10
+						}
+					]
 				},
 				{
 					"toolId": "sword1",
 					"name": "Draw first blood",
-					"rewards": {
-						"glory": 100
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 100
+						}
+					]
 				},
 				{
 					"toolId": "sword2",
 					"name": "Slay the hound",
-					"rewards": {
-						"glory": 1000
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 1000
+						}
+					]
 				}
 			]
 		},
@@ -92,23 +111,32 @@
 				{
 					"toolId": "axe2",
 					"name": "Slay the giant",
-					"rewards": {
-						"glory": 200
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 200
+						}
+					]
 				},
 				{
 					"toolId": "sword2",
 					"name": "Slay the ogre",
-					"rewards": {
-						"glory": 100
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 100
+						}
+					]
 				},
 				{
 					"toolId": "taunt",
 					"name": "Insult Loki",
-					"rewards": {
-						"glory": 300
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 300
+						}
+					]
 				}
 			]
 		},
@@ -127,16 +155,22 @@
 				{
 					"toolId": "axe1",
 					"name": "Gather firewood",
-					"rewards": {
-						"glory": 50
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 50
+						}
+					]
 				},
 				{
 					"toolId": "sword1",
 					"name": "Exterminate giant spiders",
-					"rewards": {
-						"glory": 150
-					}
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 150
+						}
+					]
 				}
 			]
 		}
@@ -166,11 +200,30 @@
 					"delayFactor": 0.75
 				}
 			],
-			"visitCosts": {
-				"enmity": {
-					"gnipahellir": 10
+			"visitCosts": [
+				{
+					"metricId": "enmity",
+					"placeId": "gnipahellir",
+					"amount": 10
 				}
-			}
+			],
+			"rewardModifiers": [
+				{
+					"metricId": "glory",
+					"toolId": "sword1",
+					"factor": 0.5
+				},
+				{
+					"metricId": "glory",
+					"toolId": "sword2",
+					"factor": 0.6
+				},
+				{
+					"metricId": "glory",
+					"toolId": "axe1",
+					"factor": 2
+				}
+			]
 		},
 		{
 			"id": "viking2",
@@ -209,70 +262,75 @@
 					"delayFactor": 1.6
 				}
 			],
-			"visitCosts": {
-				"enmity": {
-					"vigrid": 100
+			"visitCosts": [
+				{
+					"metricId": "enmity",
+					"placeId": "vigrid",
+					"amount": 100
 				}
-			}
+			]
 		}
 	],
 	"tools": [
 		{
 			"id": "sword1",
 			"name": "Gladius",
-			"defaultTime": 45
+			"delay": 45
 		},
 		{
 			"id": "sword2",
 			"name": "Zweihander",
-			"defaultTime": 60,
+			"delay": 60,
 			"completionRate": 0.95
 		},
 		{
 			"id": "axe1",
 			"name": "Hatchet",
-			"defaultTime": 30
+			"delay": 30
 		},
 		{
 			"id": "axe2",
 			"name": "Greataxe",
-			"defaultTime": 75,
+			"delay": 75,
 			"completionRate": 0.94
 		},
 		{
 			"id": "punch",
-			"defaultTime": 90,
+			"delay": 90,
 			"completionRate": 0.1
 		},
 		{
 			"id": "taunt",
-			"defaultTime": 15,
+			"delay": 15,
 			"completionRate": 0.2
 		}
 	],
-	"costFactors": [
+	"metrics": [
 		{
-			"metric": "Distance",
+			"type": "Distance",
+			"mode": "Minimize",
 			"weight": 100
 		},
 		{
-			"metric": "TravelTime",
+			"type": "TravelTime",
+			"mode": "Minimize",
 			"weight": 100
 		},
 		{
-			"metric": "WorkTime",
+			"type": "WorkTime",
+			"mode": "Minimize",
 			"weight": 100
 		},
 		{
 			"id": "glory",
-			"metric": "Custom",
-			"isBenefit": true,
+			"type": "Custom",
+			"mode": "Maximize",
 			"weight": 500
 		},
 		{
 			"id": "enmity",
-			"metric": "Custom",
-			"isBenefit": true,
+			"type": "Custom",
+			"mode": "Maximize",
 			"weight": 500
 		}
 	],

@@ -13,6 +13,12 @@ public class Node(int id, Place place, (long open, long close)? timeWindow = nul
 
 	public (long Open, long Close) TimeWindow { get; init; } = timeWindow ?? (0, long.MaxValue);
 
+	public Dictionary<Metric, double> AvailableRewards { get; private init; } =
+		place
+			.Tasks.SelectMany(t => t.RewardsByMetric)
+			.GroupBy(x => x.Key)
+			.ToDictionary(x => x.Key, x => x.ToList().Sum(y => y.Value));
+
 	public override string ToString()
 	{
 		return $"{Place} <{Id}>";
