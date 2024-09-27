@@ -16,7 +16,7 @@ public class ProblemTests : TestBase
 		{
 			Problem.FromJson(json.ToString()).Validate();
 		});
-		Assert.Contains($"Places#1.Id={duplicateId} is NotUnique", exception.Message);
+		Assert.Contains($"places#1.id={duplicateId} is NotUnique", exception.Message);
 	}
 
 	[Fact]
@@ -41,7 +41,7 @@ public class ProblemTests : TestBase
 		{
 			Problem.FromJson(json.ToString()).Validate();
 		});
-		Assert.Contains("Tools is MissingOrEmpty", exception.Message);
+		Assert.Contains("tools is MissingOrEmpty", exception.Message);
 	}
 
 	[Fact]
@@ -53,7 +53,7 @@ public class ProblemTests : TestBase
 		{
 			Problem.FromJson(json.ToString()).Validate();
 		});
-		Assert.Contains("Tools#0.Id is Empty", exception.Message);
+		Assert.Contains("tools#0.id is MissingOrEmpty", exception.Message);
 	}
 
 	[Fact]
@@ -66,7 +66,7 @@ public class ProblemTests : TestBase
 		{
 			Problem.FromJson(json.ToString()).Validate();
 		});
-		Assert.Contains($"Tools#1.Id={duplicateId} is NotUnique", exception.Message);
+		Assert.Contains($"tools#1.id={duplicateId} is NotUnique", exception.Message);
 	}
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 }

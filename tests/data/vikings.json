@@ -55,18 +55,9 @@
 			},
 			"tasks": [
 				{
-					"toolId": "punch",
 					"name": "Boop the snoot",
-					"rewards": [
-						{
-							"metricId": "glory",
-							"amount": 10
-						}
-					]
-				},
-				{
-					"toolId": "sword1",
-					"name": "Boop the snoot2",
+					"toolId": "punch",
+					"optional": true,
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -85,8 +76,9 @@
 					]
 				},
 				{
-					"toolId": "sword2",
 					"name": "Slay the hound",
+					"toolId": "sword2",
+					"optional": true,
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -109,8 +101,8 @@
 			},
 			"tasks": [
 				{
-					"toolId": "axe2",
 					"name": "Slay the giant",
+					"toolId": "axe2",
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -119,8 +111,9 @@
 					]
 				},
 				{
-					"toolId": "sword2",
 					"name": "Slay the ogre",
+					"toolId": "sword2",
+					"optional": true,
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -129,8 +122,9 @@
 					]
 				},
 				{
-					"toolId": "taunt",
 					"name": "Insult Loki",
+					"toolId": "taunt",
+					"optional": true,
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -153,8 +147,9 @@
 			},
 			"tasks": [
 				{
-					"toolId": "axe1",
 					"name": "Gather firewood",
+					"toolId": "axe1",
+					"optional": true,
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -163,8 +158,8 @@
 					]
 				},
 				{
-					"toolId": "sword1",
 					"name": "Exterminate giant spiders",
+					"toolId": "sword1",
 					"rewards": [
 						{
 							"metricId": "glory",
@@ -200,14 +195,12 @@
 					"delayFactor": 0.75
 				}
 			],
-			"visitCosts": [
+			"rewardModifiers": [
 				{
 					"metricId": "enmity",
 					"placeId": "gnipahellir",
 					"amount": 10
-				}
-			],
-			"rewardModifiers": [
+				},
 				{
 					"metricId": "glory",
 					"toolId": "sword1",
@@ -262,7 +255,7 @@
 					"delayFactor": 1.6
 				}
 			],
-			"visitCosts": [
+			"rewardModifiers": [
 				{
 					"metricId": "enmity",
 					"placeId": "vigrid",
@@ -297,12 +290,12 @@
 		{
 			"id": "punch",
 			"delay": 90,
-			"completionRate": 0.1
+			"completionRate": 0.92
 		},
 		{
 			"id": "taunt",
 			"delay": 15,
-			"completionRate": 0.2
+			"completionRate": 0.93
 		}
 	],
 	"metrics": [

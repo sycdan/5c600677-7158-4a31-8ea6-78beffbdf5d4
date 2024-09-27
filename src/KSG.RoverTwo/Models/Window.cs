@@ -19,4 +19,9 @@ public class Window()
 	{
 		return (Math.Max((long)(Open - tZero).TotalSeconds, 0), (long)(Close - tZero).TotalSeconds);
 	}
+
+	public override string ToString()
+	{
+		return $"{Open} to {Close})";
+	}
 }

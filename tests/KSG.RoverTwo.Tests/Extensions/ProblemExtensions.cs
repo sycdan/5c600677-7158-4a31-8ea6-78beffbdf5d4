@@ -14,7 +14,7 @@ public static class ProblemExtensions
 		return problem;
 	}
 
-	public static Problem WithWorkers(this Problem problem, params Worker[] workers)
+	public static Problem WithWorkers(this Problem problem, Worker[] workers)
 	{
 		foreach (var worker in workers)
 		{
@@ -23,7 +23,7 @@ public static class ProblemExtensions
 		return problem;
 	}
 
-	public static Problem WithPlaces(this Problem problem, params Place[] places)
+	public static Problem WithPlaces(this Problem problem, Place[] places)
 	{
 		foreach (var place in places)
 		{
@@ -93,6 +93,12 @@ public static class ProblemExtensions
 		return task;
 	}
 
+	public static Task WithOptional(this Task task, bool optional)
+	{
+		task.Optional = optional;
+		return task;
+	}
+
 	/// <summary>
 	/// Fill in any data gaps in the problem.
 	/// </summary>
@@ -100,6 +106,21 @@ public static class ProblemExtensions
 	/// <returns></returns>
 	public static Problem Fill(this Problem problem)
 	{
+		// Ensure there is a hub
+		var hub = problem.Places.FirstOrDefault(p => p.IsHub);
+		if (hub is null)
+		{
+			hub = Build.Hub(name: "Home", coordinates: (0, 0));
+			problem.Places.Add(hub);
+		}
+
+		// Add a worker if there are none
+		if (problem.Workers.Count == 0)
+		{
+			var worker = Build.Worker(startPlace: hub);
+			problem.Workers.Add(worker);
+		}
+
 		// Add tasks to jobs that have none
 		foreach (var place in problem.Places.Where(p => p.IsJob && p.Tasks.Count == 0))
 		{

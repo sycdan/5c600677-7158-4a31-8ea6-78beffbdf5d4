@@ -1,14 +1,15 @@
+using KSG.RoverTwo.Interfaces;
+
 namespace KSG.RoverTwo.Models;
 
-public class Worker
+public class Worker : IAmUnique
 {
-	public required string Id { get; init; }
-	private string? _name;
-	public string Name
-	{
-		get => _name ?? Id;
-		set => _name = value;
-	}
+	public string Id { get; init; } = Guid.NewGuid().ToString();
+
+	/// <summary>
+	/// Optional display name.
+	/// </summary>
+	public string? Name { get; set; }
 
 	/// <summary>
 	/// At which place should the worker begin their route?
@@ -56,7 +57,7 @@ public class Worker
 	public required List<Capability> Capabilities { get; init; }
 
 	/// <summary>
-	/// Set during validation.
+	/// Populated during validation.
 	/// </summary>
 	internal Dictionary<Tool, Capability> CapabilitiesByTool { get; private init; } = [];
 
@@ -67,14 +68,18 @@ public class Worker
 	internal Dictionary<Metric, Dictionary<Place, double>> VisitCostsByMetric { get; private init; } = [];
 
 	/// <summary>
-	/// Multipliers for default task rewards, by metric and tool.
-	/// Any combination not specified here will use the default (100%).
-	/// Values must be greater than or equal to zero.
+	/// Static visit rewards and multipliers for task rewards.
+	/// Any combination not specified here will use the default factor (100%).
+	/// Values cannot be negative.
 	/// </summary>
 	public List<RewardModifier> RewardModifiers { get; init; } = [];
 
 	public override string ToString()
 	{
-		return Name ?? $"{nameof(Worker)}:{Id}";
+		if (string.IsNullOrWhiteSpace(Name))
+		{
+			return $"{nameof(Worker)}:{Id}";
+		}
+		return Name;
 	}
 }

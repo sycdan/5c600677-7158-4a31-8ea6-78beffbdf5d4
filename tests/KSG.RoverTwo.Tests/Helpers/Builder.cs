@@ -15,15 +15,17 @@ public static class Builder
 		string? name = null
 	)
 	{
-		var location = coordinates is null ? null : Location.From(coordinates.Value);
 		id ??= Guid.NewGuid().ToString();
+		name ??= $"hub:{id}";
+		coordinates ??= (0, 0);
+		window ??= new Window();
 		var place = new Place()
 		{
 			Id = id,
-			Name = name ?? $"hub:{id}",
+			Name = name,
 			Type = PlaceType.Hub,
-			Location = location,
-			ArrivalWindow = window ?? new Window(),
+			Location = Location.From(coordinates.Value),
+			ArrivalWindow = window,
 		};
 		return place;
 	}
@@ -127,7 +129,7 @@ public static class Builder
 	}
 
 	public static Problem Problem(
-		DateTimeOffset tZero,
+		DateTimeOffset? tZero = null,
 		string distanceUnit = "Mile",
 		double distanceFactor = 1609.34,
 		string timeUnit = "Hour",
@@ -141,7 +143,7 @@ public static class Builder
 	{
 		var problem = new Problem()
 		{
-			TZero = tZero,
+			TZero = tZero ?? DateTimeOffset.UtcNow,
 			TimeUnit = timeUnit,
 			TimeFactor = timeFactor,
 			DistanceUnit = distanceUnit,

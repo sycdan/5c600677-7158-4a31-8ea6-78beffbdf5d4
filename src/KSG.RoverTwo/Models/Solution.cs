@@ -11,19 +11,9 @@ public class Solution()
 	public List<Visit> Visits { get; private init; } = [];
 
 	/// <summary>
-	/// Total route cost divided by number of visits, per worker.
-	/// </summary>
-	public Dictionary<Worker, double> CostPerVisit { get; private init; } = [];
-
-	/// <summary>
 	/// Places that were not visited.
 	/// </summary>
 	public List<Place> SkippedPlaces { get; private init; } = [];
-
-	/// <summary>
-	/// How many rewards were left unclaimed at the skipped places, per metric.
-	/// </summary>
-	public Dictionary<Metric, double> MissedRewards { get; private init; } = [];
 
 	/// <summary>
 	/// Builds a response object containing the solution details, fit for serialization.
@@ -40,10 +30,9 @@ public class Solution()
 				v.ArrivalTime,
 				v.DepartureTime,
 				EarnedRewards = v.EarnedRewards.ToDictionary(x => x.Key.Id, x => x.Value),
+				CompletedTasks = v.CompletedTasks.OrderBy(t => t.Order).Select(t => t.Name ?? t.Id),
 			}),
-			CostPerVisit = CostPerVisit.ToDictionary(x => x.Key.Id, x => x.Value),
 			SkippedPlaces = SkippedPlaces.Select(p => p.Id),
-			MissedRewards = MissedRewards.ToDictionary(x => x.Key.Id, x => x.Value),
 		};
 	}
 }

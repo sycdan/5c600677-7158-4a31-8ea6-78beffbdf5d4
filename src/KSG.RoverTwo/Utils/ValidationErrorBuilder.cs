@@ -6,10 +6,15 @@ namespace KSG.RoverTwo.Utils;
 
 public class ValidationErrorBuilder(string message = "Validation failed because")
 {
-	public string Message { get; private init; } = message;
+	private const string DEFAULT_SEPARATOR = ".";
+	internal string Message { get; private init; } = message;
 	public List<string> Context { get; private init; } = [];
 
-	public ValidationErrorBuilder AddContext(string field, string separator = ".", bool forceSeparator = false)
+	public ValidationErrorBuilder AddContext(
+		string field,
+		string separator = DEFAULT_SEPARATOR,
+		bool forceSeparator = false
+	)
 	{
 		var prefix = "";
 		if (forceSeparator || Context.Count > 0)
@@ -18,6 +23,16 @@ public class ValidationErrorBuilder(string message = "Validation failed because"
 		}
 		Context.Add($"{prefix}{field}");
 		return this;
+	}
+
+	public ValidationErrorBuilder AddContext(double value, string separator)
+	{
+		return AddContext(value.ToString(), separator, true);
+	}
+
+	public ValidationErrorBuilder AddContext(long field, string separator)
+	{
+		return AddContext(field.ToString(), separator, true);
 	}
 
 	public ValidationErrorBuilder AddContext(long index)
@@ -53,7 +68,7 @@ public class ValidationErrorBuilder(string message = "Validation failed because"
 		{
 			stringBuilder.Append(context);
 		}
-		stringBuilder.Append($" {reason}");
+		stringBuilder.Append($" {reason}.");
 		return new ValidationError(stringBuilder.ToString());
 	}
 }

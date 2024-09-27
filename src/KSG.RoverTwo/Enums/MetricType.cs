@@ -6,22 +6,22 @@ namespace KSG.RoverTwo.Enums;
 public enum MetricType
 {
 	/// <summary>
-	/// Will pull directly from a worker's custom metrics or task rewards.
+	/// Will be accrued via a combination of visit costs and task rewards.
 	/// </summary>
 	Custom,
 
 	/// <summary>
-	/// A static measurement from a to b, independent of vehicle.
+	/// Tracks the distance between a and b, independent of vehicle.
 	/// </summary>
 	Distance,
 
 	/// <summary>
-	/// A measure of time from a to b.
+	/// Tracks the travel time from a to b, based on vehicle speed.
 	/// </summary>
 	TravelTime,
 
 	/// <summary>
-	/// Time units spent at a.
+	/// Tracks a worker's time spent at a, modified by capabilities.
 	/// </summary>
 	WorkTime,
 }

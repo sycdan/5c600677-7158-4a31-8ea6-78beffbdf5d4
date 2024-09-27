@@ -1,6 +1,7 @@
 using System.Text.Json;
 using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Extensions;
+using KSG.RoverTwo.Interfaces;
 using KSG.RoverTwo.Utils;
 using Serilog;
 
@@ -62,20 +63,17 @@ public class Problem
 	/// A list of workers to solve for.
 	/// </summary>
 	public List<Worker> Workers { get; set; } = [];
-	private Dictionary<string, Worker> WorkersById { get; init; } = [];
 
 	/// <summary>
 	/// All possible places the workers may visit.
 	/// </summary>
 	public List<Place> Places { get; set; } = [];
-	private Dictionary<string, Place> PlacesById { get; init; } = [];
 	internal bool DoAllPlacesHaveLocations => Places.All(x => x.Location is not null);
 
 	/// <summary>
 	/// All possible risk/reward factors used to determine route cost, and their relative weights.
 	/// </summary>
 	public List<Metric> Metrics { get; set; } = [];
-	private Dictionary<string, Metric> MetricsById { get; init; } = [];
 	internal bool IsDistanceMatrixRequired
 	{
 		get
@@ -93,13 +91,21 @@ public class Problem
 	/// All tools that will be available to workers.
 	/// </summary>
 	public List<Tool> Tools { get; set; } = [];
-	private Dictionary<string, Tool> ToolsById { get; init; } = [];
 
 	/// <summary>
 	/// Which workers are allowed or required to visit which places.
 	/// Any non-guaranteed visit is considered optional.
 	/// </summary>
 	public List<Guarantee> Guarantees { get; set; } = [];
+
+	/// <summary>
+	/// Every object in the problem, keyed by its unique ID.
+	/// </summary>
+	internal Dictionary<string, IAmUnique> EntitiesById { get; private init; } = [];
+	private int ToolCount => EntitiesById.Count(x => x.Value is Tool);
+	private int PlaceCount => EntitiesById.Count(x => x.Value is Place);
+	private int WorkerCount => EntitiesById.Count(x => x.Value is Worker);
+	private int MetricCount => EntitiesById.Count(x => x.Value is Metric);
 
 	/// <summary>
 	/// Serializes the problem to a JSON string.
@@ -141,20 +147,22 @@ public class Problem
 
 	/// <summary>
 	/// Ensures the problem is valid, and populates internal data structures.
+	///
+	/// Any errors will be reported using lowerCamelCase naming.
 	/// </summary>
 	/// <returns>The Problem object itself.</returns>
 	public Problem Validate()
 	{
 		Log.Verbose("Validating problem data");
 
-		if (WorkersById.Count > 0 || PlacesById.Count > 0 || ToolsById.Count > 0 || MetricsById.Count > 0)
+		if (EntitiesById.Count > 0)
 		{
 			Log.Debug(
-				"Problem already validated; WorkerCount: {WorkerCount} PlaceCount: {PlaceCount} ToolCount {ToolCount} FactorCount {FactorCount}",
-				WorkersById.Count,
-				PlacesById.Count,
-				ToolsById.Count,
-				MetricsById.Count
+				"Problem already validated; WorkerCount: {WorkerCount} PlaceCount: {PlaceCount} ToolCount {ToolCount} MetricCount {MetricCount}",
+				WorkerCount,
+				PlaceCount,
+				ToolCount,
+				MetricCount
 			);
 			return this;
 		}
@@ -180,20 +188,14 @@ public class Problem
 
 	private void ValidateDistanceConfig()
 	{
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(DistanceUnit));
-		if (string.IsNullOrWhiteSpace(DistanceUnit))
-		{
-			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-		}
+		var errorBuilder = new ValidationErrorBuilder();
 
-		errorBuilder.PopContext().AddContext(nameof(DistanceFactor));
-		if (DistanceFactor <= 0)
-		{
-			throw errorBuilder
-				.AddContext(DistanceFactor.ToString(), "=")
-				.Build(ValidationErrorType.LessThanOrEqualToZero);
-		}
-		if (RoutingEngine.Osrm.Equals(Engine) && !1.Equals(DistanceFactor))
+		var distanceUnit = DistanceUnit;
+		EnsureSome(distanceUnit, errorBuilder, nameof(distanceUnit));
+
+		var distanceFactor = DistanceFactor;
+		EnsurePositive(distanceFactor, errorBuilder.AddContext(nameof(distanceFactor)));
+		if (RoutingEngine.Osrm.Equals(Engine) && !1.Equals(distanceFactor))
 		{
 			throw errorBuilder.Build($"must be 1 for {nameof(RoutingEngine.Osrm)}");
 		}
@@ -201,346 +203,266 @@ public class Problem
 
 	private void ValidateTools()
 	{
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(Tools));
-		if (null == Tools || Tools.Count == 0)
-		{
-			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-		}
+		var errorBuilder = new ValidationErrorBuilder();
 
-		foreach (var (i, tool) in Tools.Enumerate())
+		var tools = Tools;
+		EnsureSome(tools, errorBuilder.AddContext(nameof(tools)));
+		foreach (var (toolIndex, tool) in Tools.Enumerate())
 		{
-			errorBuilder.AddContext(i).AddContext(nameof(tool.Id));
-			if (string.IsNullOrWhiteSpace(tool.Id))
-			{
-				throw errorBuilder.Build(ValidationErrorType.Empty);
-			}
-			if (!ToolsById.TryAdd(tool.Id, tool))
-			{
-				throw errorBuilder.AddContext(tool.Id, "=").Build(ValidationErrorType.NotUnique);
-			}
-			errorBuilder.PopContext().AddContext(nameof(tool.Delay));
-			if (tool.Delay <= 0)
-			{
-				throw errorBuilder.Build(ValidationErrorType.LessThanOrEqualToZero);
-			}
-			errorBuilder.PopContext(2);
+			Log.Debug("{field}#{index}={tool}", nameof(tools), toolIndex, tool);
+			EnsureUniqueId(tool.Id, tool, errorBuilder.AddContext(toolIndex));
+
+			var delay = tool.Delay;
+			EnsurePositive(delay, errorBuilder, nameof(delay));
+
+			errorBuilder.PopContext();
 		}
 	}
 
 	private void ValidatePlaces()
 	{
-		if (ToolsById.Count.Equals(0))
+		if (ToolCount.Equals(0))
 		{
 			throw new InvalidOperationException($"call {nameof(ValidateTools)} before {nameof(ValidatePlaces)}");
 		}
-		if (MetricsById.Count.Equals(0))
+		if (MetricCount.Equals(0))
 		{
 			throw new InvalidOperationException($"call {nameof(ValidateMetrics)} before {nameof(ValidatePlaces)}");
 		}
 
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(Places));
-		if (null == Places || Places.Count == 0)
+		var tZero = TZero;
+		var places = Places;
+		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(places));
+		EnsureSome(places, errorBuilder);
+		foreach (var (placeIndex, place) in places.Enumerate())
 		{
-			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-		}
+			Log.Debug("{field}#{index}={entity}", nameof(places), placeIndex, place);
+			EnsureUniqueId(place.Id, place, errorBuilder.AddContext(placeIndex));
 
-		foreach (var (i, place) in Places.Enumerate())
-		{
-			errorBuilder.AddContext(i).AddContext(nameof(place.Id));
-			if (string.IsNullOrWhiteSpace(place.Id))
+			// Ensure the window's open and close times are valid.
+			var arrivalWindow = place.ArrivalWindow;
+			errorBuilder.AddContext(nameof(arrivalWindow));
+			if (arrivalWindow.Open > DateTimeOffset.MinValue)
 			{
-				throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-			}
-			if (!PlacesById.TryAdd(place.Id, place))
-			{
-				throw errorBuilder.AddContext(place.Id, "=").Build(ValidationErrorType.NotUnique);
-			}
-			errorBuilder.PopContext().AddContext(nameof(place.ArrivalWindow));
-			if (place.ArrivalWindow.Open > DateTimeOffset.MinValue)
-			{
-				if (place.ArrivalWindow.Close < place.ArrivalWindow.Open)
+				var open = arrivalWindow.Open;
+				var close = arrivalWindow.Close;
+				if (arrivalWindow.Close < arrivalWindow.Open)
 				{
-					throw errorBuilder.Build(
-						$"Arrival window {nameof(place.ArrivalWindow.Close)} is before {nameof(place.ArrivalWindow.Open)}"
-					);
+					throw errorBuilder.AddContext(nameof(close)).Build($"is before {nameof(open)}");
 				}
-				if (place.ArrivalWindow.Open < TZero)
+				if (arrivalWindow.Open < TZero)
 				{
-					throw errorBuilder.Build(
-						$"Arrival window {nameof(place.ArrivalWindow.Open)} is before {nameof(TZero)}"
-					);
+					throw errorBuilder.AddContext(nameof(open)).Build($"is before {nameof(tZero)}");
 				}
 			}
-			errorBuilder.PopContext().AddContext(nameof(place.Location));
-			if (place.Location is null && IsDistanceMatrixRequired)
+			errorBuilder.PopContext();
+
+			// Validate the location.
+			var location = place.Location;
+			errorBuilder.AddContext(nameof(location));
+			if (location is null && IsDistanceMatrixRequired)
 			{
 				throw errorBuilder.Build(ValidationErrorType.Missing);
 			}
-			if (place.Location is not null)
+			if (location is not null)
 			{
-				Log.Debug("{place} @ {location}", place, place.Location);
+				Log.Verbose("{place} @ {location}", place, location);
+				var x = location.X;
+				var y = location.Y;
 				if (RoutingEngine.Osrm.Equals(Engine))
 				{
-					// Longitude
-					if (place.Location.X < -180 || place.Location.X > 180)
+					// Validate longitude.
+					if (x < -180 || x > 180)
 					{
-						throw errorBuilder.Build(
-							$"{nameof(place.Location.X)} coordinate must be in the range of -180 to 180"
-						);
+						throw errorBuilder.AddContext(x, "=").Build($"must be in the range of -180 to 180");
 					}
-					// Latitude
-					if (place.Location.Y < -90 || place.Location.Y > 90)
+					// Validate latitude.
+					if (location.Y < -90 || location.Y > 90)
 					{
-						throw errorBuilder.Build(
-							$"{nameof(place.Location.Y)} coordinate must be in the range of -90 to 90"
-						);
+						throw errorBuilder.AddContext(y, "=").Build($"must be in the range of -90 to 90");
 					}
 				}
-				errorBuilder.PopContext();
 			}
+			errorBuilder.PopContext();
 
-			errorBuilder.AddContext(nameof(place.Tasks));
-			foreach (var (ti, task) in place.Tasks.Enumerate())
+			// Inject a visit task into the place's tasks and then validate them all.
+			var tasks = place.Tasks;
+			errorBuilder.AddContext(nameof(tasks));
+			foreach (var (taskIndex, task) in place.Tasks.Enumerate())
 			{
-				errorBuilder.AddContext(ti).AddContext(nameof(task.ToolId));
-				if (string.IsNullOrWhiteSpace(task.ToolId))
-				{
-					throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-				}
-				if (!ToolsById.TryGetValue(task.ToolId, out Tool? tool))
-				{
-					throw errorBuilder.AddContext(task.ToolId, "=").Build(ValidationErrorType.Invalid);
-				}
-				task.Tool = tool;
+				Log.Debug("{field}#{index}={entity}", nameof(tasks), taskIndex, task);
+				EnsureUniqueId(task.Id, task, errorBuilder.AddContext(taskIndex));
+				task.Order = taskIndex + 1;
+				task.Place = place;
 
-				// Populate the name if it's missing
-				if (string.IsNullOrWhiteSpace(task.Name))
-				{
-					task.Name = task.Id;
-				}
+				// Ensure the name is not blank.
+				var name = task.Name;
+				EnsureSome(name, errorBuilder, nameof(name));
 
-				errorBuilder.PopContext().AddContext(nameof(task.Rewards));
-				if (task.Rewards.Count.Equals(0))
-				{
-					throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-				}
-				foreach (var (ri, reward) in task.Rewards.Enumerate())
-				{
-					errorBuilder.AddContext(ri).AddContext(nameof(reward.Amount));
-					if (reward.Amount <= 0)
-					{
-						throw errorBuilder.Build(ValidationErrorType.LessThanOrEqualToZero);
-					}
+				// Ensure the tool exists and add it to the task.
+				var toolId = task.ToolId;
+				task.Tool = EnsureEntityExists<Tool>(toolId, errorBuilder, nameof(toolId));
 
-					errorBuilder.PopContext().AddContext(nameof(reward.MetricId));
-					if (!MetricsById.TryGetValue(reward.MetricId, out Metric? metric))
-					{
-						throw errorBuilder.AddContext(reward.MetricId, "=").Build(ValidationErrorType.Invalid);
-					}
+				// Validate the task's rewards.
+				var rewards = task.Rewards;
+				errorBuilder.AddContext(nameof(rewards));
+				// Every task must have at least one reward.
+				EnsureSome(rewards, errorBuilder);
+				foreach (var (rewardIndex, reward) in rewards.Enumerate())
+				{
+					errorBuilder.AddContext(rewardIndex);
+
+					// The reward amount cannot be negative.
+					var amount = reward.Amount;
+					EnsureNotNegative(amount, errorBuilder, nameof(amount));
+
+					// Ensure the Metric exists and accumulate rewards for it.
+					var metricId = reward.MetricId;
+					var metric = EnsureEntityExists<Metric>(metricId, errorBuilder, nameof(metricId));
 					reward.Metric = metric;
-					task.RewardsByMetric[metric] = reward.Amount;
+					task.RewardsByMetric.TryAdd(metric, 0);
+					task.RewardsByMetric[metric] += amount;
 
-					errorBuilder.PopContext(2);
+					errorBuilder.PopContext();
 				}
-
 				errorBuilder.PopContext(2);
 			}
-
 			errorBuilder.PopContext(2);
 		}
 	}
 
 	private void ValidateWorkers()
 	{
-		if (ToolsById.Count.Equals(0))
+		if (ToolCount is 0)
 		{
-			throw new InvalidOperationException($"{nameof(Tools)} must be validated before {nameof(Workers)}");
+			throw new InvalidOperationException($"call {nameof(ValidateTools)} before {nameof(ValidateWorkers)}");
+		}
+		if (PlaceCount is 0)
+		{
+			throw new InvalidOperationException($"call {nameof(ValidatePlaces)} before {nameof(ValidateWorkers)}");
 		}
 
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(Workers));
-		if (null == Workers || Workers.Count == 0)
+		var workers = Workers;
+		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(workers));
+		EnsureSome(workers, errorBuilder);
+		foreach (var (workerIndex, worker) in workers.Enumerate())
 		{
-			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-		}
+			Log.Debug("{field}#{index}={entity}", nameof(workers), workerIndex, worker);
+			EnsureUniqueId(worker.Id, worker, errorBuilder.AddContext(workerIndex));
 
-		foreach (var (i, worker) in Workers.Enumerate())
-		{
-			errorBuilder.AddContext(i);
-
-			// Ensure the worker has a unique identifier
-			errorBuilder.AddContext(nameof(worker.Id));
-			if (string.IsNullOrWhiteSpace(worker.Id))
-			{
-				throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-			}
-			if (!WorkersById.TryAdd(worker.Id, worker))
-			{
-				throw errorBuilder.AddContext(worker.Id, "=").Build(ValidationErrorType.NotUnique);
-			}
-			errorBuilder.PopContext();
-
-			// Ensure the worker has a valid start place
-			errorBuilder.AddContext(nameof(worker.StartPlaceId));
-			if (string.IsNullOrWhiteSpace(worker.StartPlaceId))
-			{
-				throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-			}
-			if (!PlacesById.TryGetValue(worker.StartPlaceId, out Place? startPlace))
-			{
-				throw errorBuilder.AddContext(worker.StartPlaceId, "=").Build(ValidationErrorType.Invalid);
-			}
+			// Ensure the worker has a valid start place.
+			var startPlaceId = worker.StartPlaceId;
+			var startPlace = EnsureEntityExists<Place>(startPlaceId, errorBuilder, nameof(startPlaceId));
 			worker.StartPlace = startPlace;
-			errorBuilder.PopContext();
 
-			// Ensure the worker has a valid end place
-			errorBuilder.AddContext(nameof(worker.EndPlaceId));
-			if (string.IsNullOrWhiteSpace(worker.EndPlaceId))
-			{
-				throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-			}
-			if (!PlacesById.TryGetValue(worker.EndPlaceId, out Place? endPlace))
-			{
-				throw errorBuilder.AddContext(worker.EndPlaceId, "=").Build(ValidationErrorType.Invalid);
-			}
+			// Ensure the worker has a valid end place.
+			var endPlaceId = worker.EndPlaceId;
+			var endPlace = EnsureEntityExists<Place>(endPlaceId, errorBuilder, nameof(endPlaceId));
 			worker.EndPlace = endPlace;
-			errorBuilder.PopContext();
 
-			// Ensure the worker has a travel speed factor greater than zero
-			errorBuilder.AddContext(nameof(worker.TravelSpeedFactor));
-			if (worker.TravelSpeedFactor <= 0)
+			// Ensure the worker has a travel speed factor greater than zero.
+			var travelSpeedFactor = worker.TravelSpeedFactor;
+			errorBuilder.AddContext(nameof(travelSpeedFactor));
+			if (travelSpeedFactor <= 0)
 			{
 				throw errorBuilder.Build(ValidationErrorType.LessThanOrEqualToZero);
 			}
 			errorBuilder.PopContext();
 
-			// Validate capabilities
-			errorBuilder.AddContext(nameof(worker.Capabilities));
-			foreach (var (ci, capability) in worker.Capabilities.Enumerate())
+			var capabilities = worker.Capabilities;
+			errorBuilder.AddContext(nameof(capabilities));
+			EnsureSome(capabilities, errorBuilder);
+			foreach (var (capabilityIndex, capability) in capabilities.Enumerate())
 			{
-				errorBuilder.AddContext(ci);
+				errorBuilder.AddContext(capabilityIndex);
 
-				// Ensure the tool exists and add it to the worker's capabilities
-				errorBuilder.AddContext(nameof(capability.ToolId));
-				if (string.IsNullOrWhiteSpace(capability.ToolId))
-				{
-					throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-				}
-				if (!ToolsById.TryGetValue(capability.ToolId, out Tool? tool))
-				{
-					throw errorBuilder.AddContext(capability.ToolId, "=").Build(ValidationErrorType.Invalid);
-				}
+				// Ensure the Tool exists and add it to the Capability.
+				var toolId = capability.ToolId;
+				errorBuilder.AddContext(nameof(toolId));
+				var tool = EnsureEntityExists<Tool>(toolId, errorBuilder);
 				if (!worker.CapabilitiesByTool.TryAdd(tool, capability))
 				{
-					throw errorBuilder.AddContext(capability.ToolId, "=").Build(ValidationErrorType.NotUnique);
+					throw errorBuilder.AddContext(toolId, "=").Build(ValidationErrorType.NotUnique);
 				}
-
 				errorBuilder.PopContext(2);
 			}
 			errorBuilder.PopContext();
 
-			// Validate visit costs
-			errorBuilder.AddContext(nameof(worker.VisitCosts));
-			foreach (var (vci, visitCost) in worker.VisitCosts.Enumerate())
+			// Validate the worker's reward modifiers, if they have any.
+			var rewardModifiers = worker.RewardModifiers;
+			errorBuilder.AddContext(nameof(rewardModifiers));
+			foreach (var (rewardModifierIndex, rewardModifier) in rewardModifiers.Enumerate())
 			{
-				errorBuilder.AddContext(vci);
+				errorBuilder.AddContext(rewardModifierIndex);
 
-				// Ensure the place exists
-				errorBuilder.AddContext(nameof(visitCost.PlaceId));
-				if (!PlacesById.TryGetValue(visitCost.PlaceId, out Place? place))
-				{
-					throw errorBuilder.AddContext(visitCost.PlaceId, "=").Build(ValidationErrorType.Invalid);
-				}
-				visitCost.Place = place;
-				errorBuilder.PopContext();
+				// Ensure the metric exists.
+				var metricId = rewardModifier.MetricId;
+				var metric = EnsureEntityExists<Metric>(metricId, errorBuilder, nameof(metricId));
+				rewardModifier.Metric = metric;
 
-				// Ensure the metric exists
-				errorBuilder.AddContext(nameof(visitCost.MetricId));
-				if (!MetricsById.TryGetValue(visitCost.MetricId, out Metric? metric))
+				// TODO more variable modifiers (e.g. place + tool)
+				if (rewardModifier.ToolId is not null && rewardModifier.PlaceId is not null)
 				{
-					throw errorBuilder.AddContext(visitCost.MetricId, "=").Build(ValidationErrorType.Invalid);
+					throw errorBuilder.Build("cannot have both a tool and a place");
 				}
-				visitCost.Metric = metric;
-				errorBuilder.PopContext();
 
-				// Ensure the amount is greater than zero
-				errorBuilder.AddContext(nameof(visitCost.Amount));
-				if (visitCost.Amount <= 0)
+				// TODO allow only unique combinations of tool/place/metric
+
+				// If set, ensure the tool exists and it is accompanied by a factor.
+				if (rewardModifier.ToolId is { } toolId)
 				{
-					throw errorBuilder
-						.AddContext(visitCost.Amount.ToString(), "=")
-						.Build(ValidationErrorType.LessThanOrEqualToZero);
+					var tool = EnsureEntityExists<Tool>(toolId, errorBuilder, nameof(toolId));
+					rewardModifier.Tool = tool;
+					var factor = rewardModifier.Factor;
+					EnsureNotNegative(factor, errorBuilder, nameof(factor));
 				}
-				errorBuilder.PopContext();
+
+				// If set, ensure the place exists and it is accompanied by an amount.
+				if (rewardModifier.PlaceId is { } placeId)
+				{
+					var place = EnsureEntityExists<Place>(placeId, errorBuilder, nameof(placeId));
+					rewardModifier.Place = place;
+					var amount = rewardModifier.Amount;
+					EnsurePresent(amount, errorBuilder, nameof(amount));
+				}
+
+				// Only one of amount or factor can be defined.
+				if (rewardModifier.Amount is not null && rewardModifier.Factor is not null)
+				{
+					throw errorBuilder.Build("cannot have both an amount and a factor");
+				}
 
 				errorBuilder.PopContext();
 			}
-			errorBuilder.PopContext();
-
-			// Validate reward factors
-			errorBuilder.AddContext(nameof(worker.RewardModifiers));
-			foreach (var (rfi, rewardFactor) in worker.RewardModifiers.Enumerate())
-			{
-				errorBuilder.AddContext(rfi);
-
-				// Ensure the metric exists
-				errorBuilder.AddContext(nameof(rewardFactor.MetricId));
-				if (!MetricsById.TryGetValue(rewardFactor.MetricId, out Metric? metric))
-				{
-					throw errorBuilder.AddContext(rewardFactor.MetricId, "=").Build(ValidationErrorType.Invalid);
-				}
-				rewardFactor.Metric = metric;
-				errorBuilder.PopContext();
-
-				// Ensure the multiplier is at least zero
-				errorBuilder.AddContext(nameof(rewardFactor.Factor));
-				if (rewardFactor.Factor < 0)
-				{
-					throw errorBuilder
-						.AddContext(rewardFactor.Factor.ToString(), "=")
-						.Build(ValidationErrorType.LessThanZero);
-				}
-				errorBuilder.PopContext();
-
-				errorBuilder.PopContext();
-			}
-
 			errorBuilder.PopContext(2);
 		}
 	}
 
 	private void ValidateMetrics()
 	{
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(Metrics));
-		if (null == Metrics || Metrics.Count == 0)
-		{
-			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
-		}
-
 		var factorsByMetric = new Dictionary<MetricType, Metric>();
-		foreach (var (i, metric) in Metrics.Enumerate())
+		var metrics = Metrics;
+		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(metrics));
+		EnsureSome(metrics, errorBuilder);
+		foreach (var (metricIndex, metric) in metrics.Enumerate())
 		{
-			Log.Debug("Metric {i}: {metric}", i, metric);
-			errorBuilder.AddContext(i).AddContext(nameof(metric.Id));
-			if (string.IsNullOrWhiteSpace(metric.Id))
+			Log.Debug("{field}#{index}={entity}", nameof(metrics), metricIndex, metric);
+			errorBuilder.AddContext(metricIndex);
+			EnsureUniqueId(metric.Id, metric, errorBuilder);
+
+			// Built-in metrics must be unique.
+			var type = metric.Type;
+			errorBuilder.AddContext(nameof(type));
+			if (!MetricType.Custom.Equals(type) && !factorsByMetric.TryAdd(type, metric))
 			{
-				throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
+				throw errorBuilder.AddContext(type.ToString(), "=").Build(ValidationErrorType.NotUnique);
 			}
-			if (!MetricsById.TryAdd(metric.Id, metric))
-			{
-				throw errorBuilder.AddContext(metric.Id, "=").Build(ValidationErrorType.NotUnique);
-			}
-			errorBuilder.PopContext().AddContext(nameof(metric.Type));
-			// Built-in metrics must be unique
-			if (!MetricType.Custom.Equals(metric.Type) && !factorsByMetric.TryAdd(metric.Type, metric))
-			{
-				throw errorBuilder.AddContext(metric.Type.ToString(), "=").Build(ValidationErrorType.NotUnique);
-			}
-			errorBuilder.PopContext().AddContext(nameof(metric.Weight));
-			if (metric.Weight < 0)
-			{
-				throw errorBuilder.Build(ValidationErrorType.LessThanZero);
-			}
-			errorBuilder.PopContext(2);
+			errorBuilder.PopContext();
+
+			var weight = metric.Weight;
+			EnsureNotNegative(weight, errorBuilder, nameof(weight));
+
+			errorBuilder.PopContext();
 		}
 	}
 
@@ -548,48 +470,181 @@ public class Problem
 	/// Only one worker may be guaranteed to visit a given place.
 	/// Many workers may be excluded from visiting a given place.
 	/// </summary>
-	/// <exception cref="ApplicationException"></exception>
+	/// <exception cref="InvalidOperationException">If called out of order.</exception>
 	private void ValidateGuarantees()
 	{
-		if (0 == PlacesById.Count)
+		if (PlaceCount is 0)
 		{
-			throw new ApplicationException($"call {nameof(ValidatePlaces)} first");
+			throw new InvalidOperationException($"call {nameof(ValidatePlaces)} before {nameof(ValidateGuarantees)}");
+		}
+		if (WorkerCount is 0)
+		{
+			throw new InvalidOperationException($"call {nameof(ValidateWorkers)} before {nameof(ValidateGuarantees)}");
 		}
 
-		if (0 == WorkersById.Count)
-		{
-			throw new ApplicationException($"call {nameof(ValidateWorkers)} first");
-		}
-
-		if (null == Guarantees || Guarantees.Count == 0)
+		if (Guarantees is not { Count: > 0 })
 		{
 			Log.Information("{field} not provided; all visits will be optional", nameof(Guarantees));
 			return;
 		}
 
 		var mustVisitsByPlaceId = new Dictionary<string, string>();
-
-		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(Guarantees));
-		foreach (var (i, visit) in Guarantees.Enumerate())
+		var guarantees = Guarantees;
+		var errorBuilder = new ValidationErrorBuilder().AddContext(nameof(guarantees));
+		foreach (var (guaranteeIndex, visit) in guarantees.Enumerate())
 		{
-			errorBuilder.AddContext(i);
-			if (!WorkersById.ContainsKey(visit.WorkerId))
+			Log.Debug("{field}#{index}={entity}", nameof(guarantees), guaranteeIndex, visit);
+			errorBuilder.AddContext(guaranteeIndex);
+
+			var workerId = visit.WorkerId;
+			errorBuilder.AddContext(nameof(workerId));
+			if (!EntitiesById.ContainsKey(workerId))
 			{
-				throw errorBuilder.AddContext(nameof(visit.WorkerId)).Build();
+				throw errorBuilder.AddContext(nameof(workerId)).Build();
 			}
-			if (!PlacesById.ContainsKey(visit.PlaceId))
+			errorBuilder.PopContext();
+
+			var placeId = visit.PlaceId;
+			if (!EntitiesById.ContainsKey(placeId))
 			{
-				throw errorBuilder.AddContext(nameof(visit.PlaceId)).Build();
+				throw errorBuilder.AddContext(nameof(placeId)).Build();
 			}
 			errorBuilder.AddContext(nameof(visit.MustVisit));
 			if (visit.MustVisit)
 			{
-				if (!mustVisitsByPlaceId.TryAdd(visit.PlaceId, visit.WorkerId))
+				if (!mustVisitsByPlaceId.TryAdd(placeId, workerId))
 				{
-					throw errorBuilder.Build($"is already true for {mustVisitsByPlaceId[visit.PlaceId]}");
+					throw errorBuilder.Build($"is already true for {mustVisitsByPlaceId[placeId]}");
 				}
 			}
 			errorBuilder.PopContext(2);
 		}
+	}
+
+	private void EnsureUniqueId(string? id, IAmUnique entity, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		errorBuilder.AddContext(field ?? nameof(id));
+		if (string.IsNullOrWhiteSpace(id))
+		{
+			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
+		}
+		if (!EntitiesById.TryAdd(id, entity))
+		{
+			throw errorBuilder.AddContext(id, "=").Build(ValidationErrorType.NotUnique);
+		}
+		errorBuilder.PopContext();
+	}
+
+	private static void EnsurePresent<T>(T? value, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		if (value is null)
+		{
+			throw errorBuilder.Build(ValidationErrorType.Missing);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+	}
+
+	private static void EnsureNotNegative(double? value, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		EnsurePresent(value, errorBuilder);
+		if (value < 0)
+		{
+			throw errorBuilder.AddContext(value.Value, "=").Build(ValidationErrorType.LessThanZero);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+	}
+
+	private static void EnsurePositive(double? value, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		EnsurePresent(value, errorBuilder);
+		if (value <= 0)
+		{
+			throw errorBuilder.AddContext(value.Value, "=").Build(ValidationErrorType.LessThanOrEqualToZero);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+	}
+
+	/// <summary>
+	/// Validates that a list contains at least one item.
+	/// </summary>
+	/// <typeparam name="T"></typeparam>
+	/// <param name="list"></param>
+	/// <param name="errorBuilder"></param>
+	/// <param name="field"></param>
+	private static void EnsureSome<T>(IList<T>? list, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		if (list is not { Count: > 0 })
+		{
+			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+	}
+
+	/// <summary>
+	/// Validates that a string contains at least one non-whitespace character.
+	/// </summary>
+	/// <param name="value">The string to validate.</param>
+	/// <param name="errorBuilder"></param>
+	/// <param name="field">If provided, will be temporarily added to the errorBuilder context.</param>
+	private static void EnsureSome(string? value, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		if (string.IsNullOrWhiteSpace(value))
+		{
+			throw errorBuilder.Build(ValidationErrorType.MissingOrEmpty);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+	}
+
+	private T EnsureEntityExists<T>(string id, ValidationErrorBuilder errorBuilder, string? field = null)
+	{
+		if (field is not null)
+		{
+			errorBuilder.AddContext(field);
+		}
+		EnsureSome(id, errorBuilder);
+		if (!EntitiesById.TryGetValue(id, out IAmUnique? obj) || obj is not T entity)
+		{
+			throw errorBuilder.AddContext(id, "=").Build(ValidationErrorType.Unrecognized);
+		}
+		if (field is not null)
+		{
+			errorBuilder.PopContext();
+		}
+		return entity;
 	}
 }

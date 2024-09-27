@@ -1,9 +1,10 @@
 using System.Text;
 using KSG.RoverTwo.Enums;
+using KSG.RoverTwo.Interfaces;
 
 namespace KSG.RoverTwo.Models;
 
-public class Metric()
+public class Metric : IAmUnique
 {
 	public string Id { get; init; } = Guid.NewGuid().ToString();
 
@@ -30,14 +31,31 @@ public class Metric()
 		sb.Append(' ');
 		if (MetricType.Custom.Equals(Type))
 		{
-			sb.Append($"{Id}");
+			sb.Append(Id);
 		}
 		else
 		{
 			sb.Append(Type.ToString());
 		}
-		sb.Append(" @ ");
+		sb.Append(" * ");
 		sb.Append(Weight);
 		return sb.ToString();
+	}
+
+	public override int GetHashCode()
+	{
+		return HashCode.Combine(Id, Type, Mode, Weight);
+	}
+
+	public override bool Equals(object? obj)
+	{
+		if (obj is Metric other)
+		{
+			return Id.Equals(other.Id)
+				&& Type.Equals(other.Type)
+				&& Mode.Equals(other.Mode)
+				&& Weight.Equals(other.Weight);
+		}
+		return false;
 	}
 }

@@ -66,4 +66,6 @@ All `Id` values should be unique within the scope of the problem being solved, a
 - allow a place to be marked as "must visit, by any vehicle" vs only specific vehicles
 - place sequences (one worker must visit all with no deviation)
 - traveltime -> duration where possible
+- guarantee that a place must be visited, b y any worker
+- experiment with coefficients to decrease distance between best and worst route costs (reduce idle vehicles)
 

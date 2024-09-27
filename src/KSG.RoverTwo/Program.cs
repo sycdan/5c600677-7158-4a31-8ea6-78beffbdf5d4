@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using CommandLine;
 using KSG.RoverTwo.Exceptions;
 using KSG.RoverTwo.Models;

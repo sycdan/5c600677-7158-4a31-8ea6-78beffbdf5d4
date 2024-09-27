@@ -27,5 +27,4 @@ public abstract class TestBase
 		}
 		return json;
 	}
-
 }

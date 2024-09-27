@@ -7,7 +7,8 @@ public class Vehicle(int id, Worker driver, int matrixSize) : Entity(id)
 	public Worker Driver { get; private init; } = driver;
 
 	/// <summary>
-	/// How many seconds it takes for the Driver to use each tool.
+	/// How many seconds it takes for the driver to use each tool, on average.
+	/// Only tools in the driver's capabilities can be used to complete tasks.
 	/// </summary>
 	public Dictionary<Tool, long> ToolTimes { get; init; } = [];
 
@@ -27,26 +28,12 @@ public class Vehicle(int id, Worker driver, int matrixSize) : Entity(id)
 	public long[,] CostMatrix { get; private init; } = new long[matrixSize, matrixSize];
 
 	/// <summary>
-	/// Assumptions about what work will be done for which rewards when we visit each place.
+	/// Assumptions about which tasks will be performed at which nodes.
 	/// </summary>
-	public Visit[,] VisitMatrix { get; private init; } = new Visit[matrixSize, matrixSize];
-
-	/// <summary>
-	/// Reward factors for each metric and tool.
-	/// </summary>
-	public Dictionary<Metric, Dictionary<Tool, double>> RewardFactors { get; private init; } = [];
-
-	public double RewardFactor(Tool tool, Metric metric)
-	{
-		if (RewardFactors.TryGetValue(metric, out var factors))
-		{
-			return factors.GetValueOrDefault(tool, 1);
-		}
-		return 1;
-	}
+	public List<Completion>[,] WorkMatrix { get; private init; } = new List<Completion>[matrixSize, matrixSize];
 
 	public override string ToString()
 	{
-		return $"{Driver.Id} <{Id}>";
+		return $"{nameof(Vehicle)}{Id}:{Driver}";
 	}
 }

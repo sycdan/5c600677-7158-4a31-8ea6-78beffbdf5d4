@@ -1,17 +1,15 @@
+using KSG.RoverTwo.Interfaces;
+
 namespace KSG.RoverTwo.Models;
 
-public class Tool()
+public class Tool : IAmUnique
 {
+	public string Id { get; init; } = Guid.NewGuid().ToString();
+
 	/// <summary>
-	/// Must be unique among all tools; UUID is recommended.
+	/// Optional display name.
 	/// </summary>
-	public required string Id { get; set; }
-	private string? _name;
-	public string Name
-	{
-		get => _name ?? Id;
-		set => _name = value;
-	}
+	public string? Name { get; set; }
 
 	/// <summary>
 	/// The base number of time units consumed when using this tool.
@@ -25,6 +23,24 @@ public class Tool()
 
 	public override string ToString()
 	{
+		if (string.IsNullOrWhiteSpace(Name))
+		{
+			return $"{nameof(Tool)}:{Id}";
+		}
 		return Name;
+	}
+
+	public override int GetHashCode()
+	{
+		return Id.GetHashCode();
+	}
+
+	public override bool Equals(object? obj)
+	{
+		if (obj is Tool other)
+		{
+			return Id.Equals(other.Id);
+		}
+		return false;
 	}
 }

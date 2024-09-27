@@ -8,7 +8,7 @@ public class Reward
 	public required string MetricId { get; set; }
 
 	/// <summary>
-	/// Populated during validation.
+	/// Set during validation.
 	/// </summary>
 	internal Metric? Metric { get; set; }
 
@@ -16,4 +16,9 @@ public class Reward
 	/// How much is the reward.
 	/// </summary>
 	public required double Amount { get; set; }
+
+	public override string ToString()
+  {
+    return $"{MetricId}:{Amount}";
+  }
 }

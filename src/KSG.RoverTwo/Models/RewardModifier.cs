@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace KSG.RoverTwo.Models;
 
 public class RewardModifier
@@ -13,9 +15,9 @@ public class RewardModifier
 	internal Metric? Metric { get; set; }
 
 	/// <summary>
-	/// Must exist in Tools.
+	/// If set, this modifier will be applied when using the tool.
 	/// </summary>
-	public required string ToolId { get; init; }
+	public string? ToolId { get; init; }
 
 	/// <summary>
 	/// Set during validation.
@@ -23,8 +25,29 @@ public class RewardModifier
 	internal Tool? Tool { get; set; }
 
 	/// <summary>
-	/// How much to factor the reward.
+	/// If set, this modifier will be applied when visiting the place.
+	/// </summary>
+	public string? PlaceId { get; init; }
+
+	/// <summary>
+	/// Set during validation.
+	/// </summary>
+	internal Place? Place { get; set; }
+
+	/// <summary>
+	/// A concrete amount to add to or subtract from matching rewards at a given place.
+	/// Cannot reduce the reward below 0.
+	/// </summary>
+	public double? Amount { get; set; }
+
+	/// <summary>
+	/// How much to factor rewards of this type.
 	/// Cannot be less than 0.
 	/// </summary>
-	public required double Factor { get; set; }
+	public double? Factor { get; set; }
+
+	public override string ToString()
+	{
+		return Newtonsoft.Json.JsonConvert.SerializeObject(this);
+	}
 }
