@@ -10,7 +10,7 @@ public class VisitCost
 	/// <summary>
 	/// Set during validation.
 	/// </summary>
-	internal Place? Place { get; set; }
+	internal Job? Place { get; set; }
 
 	/// <summary>
 	/// Must exist in Metrics.

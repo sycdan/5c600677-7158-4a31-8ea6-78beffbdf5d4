@@ -1,17 +1,27 @@
 using Google.OrTools.ConstraintSolver;
 using KSG.RoverTwo.Enums;
+using KSG.RoverTwo.Exceptions;
 using KSG.RoverTwo.Extensions;
+using KSG.RoverTwo.Helpers;
 using KSG.RoverTwo.Models;
 using MathNet.Numerics.LinearAlgebra;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
 using Serilog;
-using Task = KSG.RoverTwo.Models.Task;
+using Window = KSG.RoverTwo.Models.Window;
 
 namespace KSG.RoverTwo;
 
 public class Solver
 {
+	/// <summary>
+	/// The problem being solved.
+	/// </summary>
+	public Problem Problem { get; private init; }
+
+	/// <summary>
+	/// All distances in the problem are multiplied by this.
+	/// </summary>
+	internal double DistanceFactor => ConvertDistance.Factors[Problem.DistanceUnit];
+
 	/// <summary>
 	/// the earliest time that any event can occur in the solution.
 	/// </summary>
@@ -36,6 +46,7 @@ public class Solver
 	/// Places and tasks which need to be visited and completed respectively.
 	/// </summary>
 	public List<Node> Nodes { get; private init; } = [];
+	internal IEnumerable<Node> JobNodes => Nodes.Where(n => n.IsJob);
 
 	/// <summary>
 	/// How many rows and columns should each matrix have.
@@ -48,25 +59,9 @@ public class Solver
 	public List<Vehicle> Vehicles { get; private init; } = [];
 
 	/// <summary>
-	/// The global chance of a worker successfully using a tool to complete a task.
-	/// </summary>
-	public Dictionary<Tool, double> CompletionChances { get; private init; } = [];
-
-	/// <summary>
-	/// Every tool that can be used to complete a task.
-	/// </summary>
-	private IEnumerable<Tool> Tools => CompletionChances.Keys;
-
-	/// <summary>
 	/// How much to weight each metric in the objective function.
 	/// </summary>
 	public Dictionary<Metric, double> MetricWeights { get; private init; } = [];
-
-	/// <summary>
-	/// An internal tool used to track visits to places.
-	/// </summary>
-	internal Tool ArrivalTool { get; private init; } = new Tool { Name = "Vehicle", Delay = 0 };
-	internal const string ARRIVAL_TASK_NAME = "Arrive";
 
 	/// <summary>
 	/// Determines the decimal precision we carry over from the double matrices.
@@ -81,48 +76,76 @@ public class Solver
 
 	public Solver(Problem problem)
 	{
-		problem.Validate();
+		Problem = problem.Validate();
 
-		TZero = problem.TZero;
-		PopulateNodes(problem);
-		PopulateMetricWeights(problem);
-		PopulateCompletionChances(problem);
-		DistanceMatrix = BuildDistanceMatrix(problem);
-		TravelTimeMatrix = BuildTravelTimeMatrix(problem);
+		TZero = DetermineTzero();
+		PopulateNodes();
+		PopulateMetricWeights();
+		DistanceMatrix = BuildDistanceMatrix();
+		TravelTimeMatrix = BuildTravelTimeMatrix();
 		InvalidTransitMatrix = BuildInvalidTransitMatrix();
-		PopulateVehicles(problem);
+		PopulateVehicles();
 
-		SearchParameters = BuildSearchParameters(problem);
+		SearchParameters = BuildSearchParameters();
 		Manager = BuildRoutingManager();
 		Routing = BuildRoutingModel();
-		TimeDimension = BuildTimeDimension(problem);
+		TimeDimension = BuildTimeDimension();
 		ApplyObjectiveFunction();
-		ApplyVehicleVisitRules(problem);
+		ApplyVehicleVisitRules();
 		ApplyPrecedenceRules();
 	}
 
-	private void PopulateCompletionChances(Problem problem)
+	/// <summary>
+	/// The start time of the problem will be either the earliest worker start time,
+	/// or the earliest job window open time, whichever is earlier.
+	/// If no times are defined, it will default to the minimum possible timestamp value.
+	/// </summary>
+	/// <returns></returns>
+	private DateTimeOffset DetermineTzero()
 	{
-		foreach (var tool in problem.Tools)
+		var tZero = DateTimeOffset.MaxValue;
+		var minWorkerStart = DateTimeOffset.MaxValue;
+		foreach (var worker in Problem.Workers)
 		{
-			CompletionChances[tool] = tool.CompletionRate;
+			if (worker.EarliestStartTime is not null && worker.EarliestStartTime < minWorkerStart)
+			{
+				minWorkerStart = worker.EarliestStartTime.Value;
+			}
 		}
+		if (minWorkerStart < tZero)
+		{
+			tZero = minWorkerStart;
+		}
+		foreach (var job in Problem.Jobs)
+		{
+			if (job.ArrivalWindow.Open < tZero)
+			{
+				tZero = job.ArrivalWindow.Open;
+			}
+			if (job.ArrivalWindow.Close < minWorkerStart)
+			{
+				Log.Warning(
+					"Arrival window for {job} closes before any worker starts their route, so it will be optional.",
+					job
+				);
+				job.Optional = true;
+			}
+		}
+		if (minWorkerStart == DateTimeOffset.MaxValue)
+		{
+			Log.Warning("Cannot determine {field} because no worker has an earliest start time.", nameof(TZero));
+			tZero = DateTimeOffset.MinValue;
+		}
+		Log.Debug("{field}: {value}", nameof(tZero), tZero);
+		return tZero;
 	}
 
-	private void PopulateVehicles(Problem problem)
+	private void PopulateVehicles()
 	{
-		if (CompletionChances.Count is 0)
-		{
-			throw new InvalidOperationException(
-				$"call {nameof(PopulateCompletionChances)} before {nameof(PopulateVehicles)}"
-			);
-		}
-
 		// Collect all the metric values and build a cost matrix for each vehicle.
-		foreach (var worker in problem.Workers)
+		foreach (var worker in Problem.Workers)
 		{
 			var vehicle = new Vehicle(Vehicles.Count, worker, Size);
-			PopulateToolTimes(vehicle, problem);
 			PopulateVehicleMatrices(vehicle);
 			Vehicles.Add(vehicle);
 		}
@@ -140,56 +163,41 @@ public class Solver
 		}
 	}
 
-	private void PopulateToolTimes(Vehicle vehicle, Problem problem)
-	{
-		foreach (var tool in Tools)
-		{
-			long toolTime = 0;
-			vehicle.Driver.CapabilitiesByTool.TryGetValue(tool, out Capability? capability);
-			if (capability is not null)
-			{
-				toolTime = (long)Math.Round(tool.Delay * capability.DelayFactor * problem.TimeFactor);
-			}
-			vehicle.ToolTimes[tool] = toolTime;
-		}
-	}
-
 	/// <summary>
 	/// Create nodes for each place in the problem.
 	/// The initial node will have an arrival window and all required tasks.
 	/// Subsequent nodes will each have one optional task, so each may be skipped.
 	/// </summary>
-	/// <param name="problem"></param>
-	private void PopulateNodes(Problem problem)
+	/// <param name="Problem"></param>
+	private void PopulateNodes()
 	{
 		Nodes.Clear();
-		foreach (var place in problem.Places)
+
+		// Hubs do not have tasks.
+		foreach (var hub in Problem.Hubs)
 		{
-			// Create the required arrival task for the place.
-			var requiredTasks = new List<Task>
-			{
-				new()
-				{
-					Order = 0,
-					Place = place,
-					Tool = ArrivalTool,
-					ToolId = ArrivalTool.Id,
-					Name = ARRIVAL_TASK_NAME,
-					Optional = false,
-					Rewards = [],
-				},
-			};
+			Nodes.Add(new Node(id: Nodes.Count, place: hub, tasks: []));
+		}
 
-			// Add all the required tasks from the problem.
-			requiredTasks.AddRange(place.Tasks.Where(t => !t.Optional));
-
+		foreach (var job in Problem.Jobs)
+		{
 			// Add the required tasks to the initial node for the place, with its arrival time window.
-			Nodes.Add(new Node(Nodes.Count, place, requiredTasks, place.ArrivalWindow.RelativeTo(TZero)));
+			var requiredTasks = job.Tasks.Where(t => !t.Optional).OrderBy(t => t.Order).ToList();
+			Nodes.Add(
+				new Node(
+					id: Nodes.Count,
+					place: job,
+					tasks: requiredTasks,
+					skippable: job.Optional,
+					timeWindow: job.ArrivalWindow.RelativeTo(TZero)
+				)
+			);
 
 			// Add a node for each optional task, so that any number of them may be skipped.
-			foreach (var task in place.Tasks.Where(t => t.Optional))
+			var optionalTasks = job.Tasks.Where(t => t.Optional).OrderBy(t => t.Order);
+			foreach (var task in optionalTasks)
 			{
-				Nodes.Add(new Node(Nodes.Count, place, [task]));
+				Nodes.Add(new Node(id: Nodes.Count, place: job, tasks: [task], skippable: true));
 			}
 		}
 	}
@@ -197,172 +205,171 @@ public class Solver
 	/// <summary>
 	/// Normalizes the metric weights in the problem so that their sum equals 1.
 	/// </summary>
-	/// <param name="problem"></param>
-	private void PopulateMetricWeights(Problem problem)
+	/// <param name="Problem"></param>
+	private void PopulateMetricWeights()
 	{
-		double totalWeight = problem.Metrics.Sum(f => f.Weight);
-		foreach (var metric in problem.Metrics)
+		double totalWeight = Problem.Metrics.Sum(f => f.Weight);
+		foreach (var metric in Problem.Metrics)
 		{
 			MetricWeights[metric] = metric.Weight / totalWeight;
 		}
 	}
 
+	public static string? NoCostReason(Node a, Node b)
+	{
+		var isSamePlace = a.Place.Equals(b.Place);
+		var aHasNoLocation = a.Place.Location is null;
+		var bHasNoLocation = b.Place.Location is null;
+		if (isSamePlace || aHasNoLocation || bHasNoLocation)
+		{
+			return isSamePlace ? "the places are the same"
+				: aHasNoLocation ? $"{a.Place} has no location"
+				: $"{a.Place} has no location";
+		}
+		return null;
+	}
+
 	/// <summary>
 	/// Distance is tracked in meters, so we need to potentially convert from what the problem has.
 	/// </summary>
-	/// <param name="problem"></param>
+	/// <param name="Problem"></param>
 	/// <param name="nodes"></param>
 	/// <returns></returns>
-	public Matrix<double> BuildDistanceMatrix(Problem problem)
+	public Matrix<double> BuildDistanceMatrix()
 	{
-		if (Size.Equals(0))
+		if (Size == 0)
 		{
 			throw new ApplicationException($"cannot build {nameof(DistanceMatrix)} of {nameof(Size)} 0");
 		}
 		var matrix = Matrix<double>.Build.Dense(Size, Size, 0);
-		if (!problem.IsDistanceMatrixRequired)
+		if (!Problem.IsDistanceMatrixRequired)
 		{
 			Log.Information("{attribute} not required", nameof(DistanceMatrix));
 			return matrix;
 		}
 		Log.Information("building {attribute} from location coordinates", nameof(DistanceMatrix));
-		if (!problem.DoAllPlacesHaveLocations)
-		{
-			throw new ApplicationException($"cannot build {nameof(DistanceMatrix)} unless all places have locations");
-		}
 		foreach (var (a, fromNode) in Nodes.Enumerate())
 		{
 			foreach (var (b, toNode) in Nodes.Enumerate(a))
 			{
-				if (RoutingEngine.Simple.Equals(problem.Engine))
+				var noDistanceReason = NoCostReason(fromNode, toNode);
+				if (noDistanceReason is null)
 				{
-					matrix[a, b] = fromNode.Location!.ManhattanDistanceTo(toNode.Location!);
-				}
-				else
-				{
-					throw new NotImplementedException(nameof(problem.Engine));
+					if (RoutingEngine.Simple.Equals(Problem.Engine))
+					{
+						matrix[a, b] = fromNode.Place.Location!.ManhattanDistanceTo(toNode.Place.Location!);
+					}
+					else
+					{
+						throw new NotImplementedException(nameof(Problem.Engine));
+					}
 				}
 				Log.Verbose(
-					"distance from {fromNode} ({fromLocation}) to {toNode} ({toLocation}) is {distance} {distanceUnit}s",
-					fromNode.Place.Name,
-					fromNode.Location,
-					toNode.Place.Name,
-					toNode.Location,
+					"distance from #{a} {fromNode} @ {fromLocation} to #{b} {toNode} @ {toLocation} is {distance} {distanceUnit} {reason}",
+					a,
+					fromNode.Place,
+					fromNode.Place.Location,
+					b,
+					toNode.Place,
+					toNode.Place.Location,
 					matrix[a, b],
-					problem.DistanceUnit
+					Problem.DistanceUnit,
+					noDistanceReason is null ? "" : $" because {noDistanceReason}"
 				);
 			}
 		}
-		return matrix.Multiply(problem.DistanceFactor);
+		return matrix.Multiply(ConvertDistance.Factors[Problem.DistanceUnit]);
 	}
 
 	/// <summary>
 	/// Time is expected in seconds, so we need to potentially convert from what the problem has.
 	/// </summary>
-	/// <param name="problem"></param>
+	/// <param name="Problem"></param>
 	/// <returns>values in seconds</returns>
-	public Matrix<double> BuildTravelTimeMatrix(Problem problem)
+	public Matrix<double> BuildTravelTimeMatrix()
 	{
-		if (Size.Equals(0))
+		if (Size == 0)
 		{
 			throw new ApplicationException($"cannot build {nameof(TravelTimeMatrix)} of {nameof(Size)} 0");
 		}
 		var matrix = Matrix<double>.Build.Dense(Size, Size, 0);
-		if (!problem.IsTravelTimeMatrixRequired)
+		if (!Problem.IsTravelTimeMatrixRequired)
 		{
 			Log.Information("{attribute} matrix not required", nameof(TravelTimeMatrix));
 			return matrix;
 		}
 		Log.Information(
-			"building {attribute} from {source} at {distanceFactor} meters per {timeUnit}",
+			"building {attribute} from {source} at {distanceFactor} meters per {distanceUnit}",
 			nameof(TravelTimeMatrix),
 			nameof(DistanceMatrix),
-			problem.DistanceFactor,
-			problem.DistanceUnit,
-			problem.TimeUnit
+			DistanceFactor,
+			Problem.DistanceUnit
 		);
 		foreach (var (a, fromNode) in Nodes.Enumerate())
 		{
 			foreach (var (b, toNode) in Nodes.Enumerate(a))
 			{
+				double travelTime = 0;
 				var meters = DistanceMatrix[a, b];
-				var distanceUnits = meters / problem.DistanceFactor;
-				matrix[a, b] = distanceUnits / problem.DefaultTravelSpeed;
+				var noTravelTimeReason = NoCostReason(fromNode, toNode);
+				if (noTravelTimeReason is null)
+				{
+					var distanceUnits = meters / DistanceFactor;
+					travelTime = distanceUnits / Problem.DefaultTravelSpeed;
+				}
 				Log.Verbose(
-					"Travel time from {a} to {b} is {travelTime} {timeUnit}s to cover {meters} meters ({distanceUnits} {distanceUnit}s)",
-					fromNode.Place.Name,
-					toNode.Place.Name,
-					matrix[a, b],
-					problem.TimeUnit,
+					"{field} for {meters} meter{s} from #{a} {fromPlace} to #{b} {toPlace} is {travelTime} {timeUnit}",
+					nameof(travelTime),
 					meters,
-					distanceUnits,
-					problem.DistanceUnit
+					meters == 1 ? "" : "s",
+					a,
+					fromNode.Place,
+					b,
+					toNode.Place,
+					travelTime,
+					Problem.TimeUnit
 				);
+				matrix[a, b] = travelTime;
 			}
 		}
-		return matrix.Multiply(problem.TimeFactor);
+		return matrix.Multiply(ConvertTime.Factors[Problem.TimeUnit]);
 	}
 
 	/// <summary>
 	/// When departing a node, simulate completing tasks and earning rewards.
-	///
-	/// Possible rewards are a combination of the task's default rewards
-	/// plus any vehicle-driver-specific rewards for visiting the place.
-	/// The resulting total is factored by the vehicle's reward factor.
-	///
-	/// Note that this occurs when the vehicle is transiting away from the node.
+	/// Rewards earned are the task's defaults, modified by the capability reward factor.
 	/// </summary>
 	/// <param name="vehicle">The vehicle visiting the node.</param>
 	/// <param name="node">The node being visited by the vehicle.</param>
-	/// <returns></returns>
+	/// <returns>A list of completed work.</returns>
 	/// <exception cref="InvalidOperationException">If not all required data elements are available.</exception>
 	private List<Completion> SimulateWork(Vehicle vehicle, Node node)
 	{
 		var completions = new List<Completion>();
 		foreach (var task in node.Tasks)
 		{
+			var job = task.Job ?? throw new InvalidOperationException($"{task} does not have a {nameof(task.Job)}");
 			var tool = task.Tool ?? throw new InvalidOperationException($"{task} does not have a {nameof(task.Tool)}");
-			var place =
-				task.Place ?? throw new InvalidOperationException($"{task} does not have a {nameof(task.Place)}");
-			var isArrivalTask = tool.Equals(ArrivalTool);
-			// TODO allow custom arrival task time
-			var workSeconds = isArrivalTask ? 1 : vehicle.ToolTimes.GetValueOrDefault(tool);
-			var completionChance = isArrivalTask ? 1 : CompletionChances.GetValueOrDefault(tool);
-			var possibleRewards = new Dictionary<Metric, double>();
-			var earnedRewards = new Dictionary<Metric, double>();
-			// TODO regroup/index reward modifiers on vehicle
-			var rewardModifiers = vehicle.Driver.RewardModifiers;
+			var capability = vehicle.Driver.CapabilitiesByTool.GetValueOrDefault(tool);
 
 			// Get the default rewards for the task.
-			if (isArrivalTask)
-			{
-				// Add place-specific visit reward modifiers from the vehicle's driver.
-				foreach (var rewardModifier in rewardModifiers)
-				{
-					if (place.Equals(rewardModifier.Place) && rewardModifier.Metric is { } metric)
-					{
-						possibleRewards.TryAdd(metric, 0);
-						possibleRewards[metric] += rewardModifier.Amount ?? 0;
-					}
-				}
-			}
-			else
-			{
-				possibleRewards = task.RewardsByMetric.ToDictionary();
-			}
+			var possibleRewards = task.RewardsByMetric.ToDictionary();
+			var earnedRewards = new Dictionary<Metric, double>();
 
 			// Determine whether the task was completed, and log earned/missed rewards.
-			if (workSeconds > 0 && Random.Shared.NextDouble() < completionChance)
+			var completionChance = capability is null ? 0 : capability.CompletionChance ?? tool.DefaultCompletionChance;
+			if (capability is not null && Random.Shared.NextDouble() < completionChance)
 			{
+				// Factor the work time.
+				var workTime = capability.WorkTime ?? tool.DefaultWorkTime;
+				var workSeconds = ConvertTime.ToSeconds(workTime, Problem.TimeUnit).AsLong();
+
 				// Apply the vehicle's reward factor for the tool being used.
 				foreach (var (metric, reward) in possibleRewards)
 				{
-					var factor =
-						rewardModifiers
-							.Where(rm => metric.Equals(rm.Metric))
-							.FirstOrDefault(rm => tool.Equals(rm.Tool))
-							?.Factor ?? 1;
-					earnedRewards[metric] = Math.Max(possibleRewards[metric], 0) * factor;
+					var rewardFactor = capability.RewardFactors.FirstOrDefault(rf => metric.Equals(rf.Metric));
+					var factor = rewardFactor is null ? 1 : rewardFactor.Factor;
+					earnedRewards[metric] = possibleRewards[metric] * factor;
 				}
 				Log.Verbose(
 					"{worker} used {tool} for {workTime} second{s} to {task} at {place} and earned {rewards}",
@@ -371,35 +378,35 @@ public class Solver
 					workSeconds,
 					workSeconds is 1 ? "" : "s",
 					task,
-					place,
+					job,
 					earnedRewards.Count > 0 ? earnedRewards.Select(x => $"{x.Key.Id}:{x.Value}") : "no rewards"
+				);
+				completions.Add(
+					new Completion
+					{
+						Worker = vehicle.Driver,
+						Task = task,
+						Job = job,
+						WorkSeconds = workSeconds,
+						EarnedRewards = earnedRewards,
+					}
 				);
 			}
 			else
 			{
-				var reason = workSeconds.Equals(0)
-					? $"lack of capability with {tool}"
-					: $"completion chance of {completionChance:P}%";
+				var reason =
+					completionChance > 0
+						? $"completion chance of {completionChance:P}%"
+						: $"lack of capability with {tool}";
 				Log.Verbose(
 					"{worker} skipped {task} at {place} due to {reason} and missed {rewards}",
 					vehicle.Driver,
 					task,
-					place,
+					job,
 					reason,
 					possibleRewards.Count > 0 ? possibleRewards.Select(x => $"{x.Key.Id}:{x.Value}") : "no rewards"
 				);
 			}
-
-			completions.Add(
-				new Completion
-				{
-					Worker = vehicle.Driver,
-					Place = place,
-					Task = task,
-					WorkSeconds = workSeconds,
-					EarnedRewards = earnedRewards,
-				}
-			);
 		}
 		return completions;
 	}
@@ -408,9 +415,9 @@ public class Solver
 	{
 		// Initialize all metrics for this vehicle with blank matrices.
 		vehicle.TimeMatrix.Clear();
-		foreach (var factor in MetricWeights.Keys)
+		foreach (var metric in MetricWeights.Keys)
 		{
-			vehicle.MetricMatrices[factor] = Matrix<double>.Build.Dense(Size, Size, 0);
+			vehicle.MetricMatrices[metric] = Matrix<double>.Build.Dense(Size, Size, 0);
 		}
 
 		// Traverse the network, recording time spent and rewards earned.
@@ -437,9 +444,9 @@ public class Solver
 						// Track work time spent on completed work at A.
 						if (completions is not null)
 						{
-							var workTime = completions.Sum(c => c.WorkSeconds);
-							matrix[a, b] += workTime;
-							vehicle.TimeMatrix[a, b] += workTime;
+							var workSeconds = completions.Sum(c => c.WorkSeconds);
+							matrix[a, b] += workSeconds;
+							vehicle.TimeMatrix[a, b] += workSeconds;
 						}
 					}
 					else if (MetricType.TravelTime.Equals(metric.Type))
@@ -516,19 +523,19 @@ public class Solver
 		var ends = new List<int>();
 		foreach (var v in Vehicles)
 		{
-			var start = Nodes.FindIndex(n => v.Driver.StartPlaceId == n.Place.Id);
+			var start = Nodes.FindIndex(n => v.Driver.StartHubId == n.Place.Id);
 			if (start == -1)
 			{
 				throw new ApplicationException(
-					$"{nameof(v.Driver.StartPlaceId)} {v.Driver.StartPlaceId} not found for vehicle {v}"
+					$"{nameof(v.Driver.StartHubId)} {v.Driver.StartHubId} not found for vehicle {v}"
 				);
 			}
 			starts.Add(start);
-			var end = Nodes.FindIndex(n => v.Driver.EndPlaceId == n.Place.Id);
+			var end = Nodes.FindIndex(n => v.Driver.EndHubId == n.Place.Id);
 			if (end == -1)
 			{
 				throw new ApplicationException(
-					$"{nameof(v.Driver.EndPlaceId)} {v.Driver.EndPlaceId} not found for vehicle {v}"
+					$"{nameof(v.Driver.EndHubId)} {v.Driver.EndHubId} not found for vehicle {v}"
 				);
 			}
 			ends.Add(end);
@@ -536,13 +543,13 @@ public class Solver
 		return new RoutingIndexManager(Nodes.Count, Vehicles.Count, [.. starts], [.. ends]);
 	}
 
-	public static RoutingSearchParameters BuildSearchParameters(Problem problem)
+	public RoutingSearchParameters BuildSearchParameters()
 	{
 		RoutingSearchParameters searchParameters =
 			operations_research_constraint_solver.DefaultRoutingSearchParameters();
 		searchParameters.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.Automatic;
 		searchParameters.LocalSearchMetaheuristic = LocalSearchMetaheuristic.Types.Value.Automatic;
-		searchParameters.TimeLimit = new() { Seconds = problem.TimeoutSeconds };
+		searchParameters.TimeLimit = new() { Seconds = Problem.TimeoutSeconds };
 		return searchParameters;
 	}
 
@@ -552,7 +559,7 @@ public class Solver
 		return routing;
 	}
 
-	public RoutingDimension BuildTimeDimension(Problem problem)
+	public RoutingDimension BuildTimeDimension()
 	{
 		var transitCallbackIndices = new List<int>();
 		foreach (var vehicle in Vehicles)
@@ -568,7 +575,7 @@ public class Solver
 			transitCallbackIndices.Add(timeTransitCallbackIndex);
 		}
 
-		var maxIdleSeconds = (long)Math.Round(problem.MaxIdleTime * problem.TimeFactor);
+		var maxIdleSeconds = ConvertTime.ToSeconds(Problem.MaxIdleTime, Problem.TimeUnit).AsLong();
 		Routing.AddDimensionWithVehicleTransits(
 			[.. transitCallbackIndices],
 			maxIdleSeconds, // max wait time at each node for arrival window to open
@@ -578,8 +585,8 @@ public class Solver
 		);
 		var timeDimension = Routing.GetDimensionOrDie(DIMENSION_TIME);
 
-		// Set arrival time windows for all jobs
-		foreach (var node in Nodes.Where(n => n.IsJob))
+		// Set arrival time windows for all jobs.
+		foreach (var node in JobNodes)
 		{
 			if (node.TimeWindow is not null)
 			{
@@ -601,33 +608,33 @@ public class Solver
 		foreach (var vehicle in Vehicles)
 		{
 			var worker = vehicle.Driver;
-			var earliestStartTime = worker.EarliestStartTime ?? problem.TZero;
-			if (earliestStartTime < problem.TZero)
-			{
-				earliestStartTime = problem.TZero;
-			}
-			var latestEndTime = worker.LatestEndTime ?? DateTimeOffset.MaxValue;
-			if (latestEndTime <= earliestStartTime)
-			{
-				latestEndTime = DateTimeOffset.MaxValue;
-			}
-			var workWindow = Window.From(earliestStartTime, latestEndTime);
-			var (workWindowOpenTime, workWindowCloseTime) = workWindow.RelativeTo(problem.TZero);
+			var workWindow = Window.From(
+				worker.EarliestStartTime ?? TZero,
+				worker.LatestEndTime ?? DateTimeOffset.MaxValue
+			);
+			var (workWindowOpenTime, workWindowCloseTime) = workWindow.RelativeTo(TZero);
 
-			var startIndex = Routing.Start(vehicle.Id);
-			timeDimension.CumulVar(startIndex).SetRange(workWindowOpenTime, workWindowCloseTime);
-			var endIndex = Routing.End(vehicle.Id);
-			timeDimension.CumulVar(endIndex).SetRange(workWindowOpenTime, workWindowCloseTime);
+			if (worker.EarliestStartTime is not null)
+			{
+				var startIndex = Routing.Start(vehicle.Id);
+				timeDimension.CumulVar(startIndex).SetRange(workWindowOpenTime, workWindowCloseTime);
+			}
+
+			if (worker.LatestEndTime is not null)
+			{
+				var endIndex = Routing.End(vehicle.Id);
+				timeDimension.CumulVar(endIndex).SetRange(workWindowOpenTime, workWindowCloseTime);
+			}
 		}
 
 		return timeDimension;
 	}
 
-	public void ApplyVehicleVisitRules(Problem problem)
+	public void ApplyVehicleVisitRules()
 	{
-		foreach (var node in Nodes)
+		foreach (var node in JobNodes)
 		{
-			if (!node.IsJob)
+			if (node.Place is not Job job)
 			{
 				continue;
 			}
@@ -637,50 +644,32 @@ public class Solver
 			var validVehicles = Vehicles.ToList();
 
 			// Exclude vehicles where the driver lacks capability with any required tool.
-			// TODO base this on required tasks not completion chances.
-			var job = node.Place;
-			var requiredTools = job
-				.Tasks.Where(x => CompletionChances[x.Tool!] >= 1)
-				.Select(x => x.Tool)
-				.Distinct()
-				.ToList();
+			var requiredTools = job.Tasks.Where(x => !x.Optional).Select(x => x.Tool).Distinct().ToList();
 			Log.Verbose("required tools for {job}: {requiredTools}", job, requiredTools);
 			validVehicles = validVehicles
-				.Except(Vehicles.Where(v => !requiredTools.All(t => v.ToolTimes[t!] > 0)))
+				.Where(v =>
+					requiredTools.All(t => v.Driver.CapabilitiesByTool.GetValueOrDefault(t!)?.CompletionChance > 0)
+				)
 				.ToList();
 
-			// Apply any guarantees defined in the problem.
-			var mustNotVisits = problem.Guarantees.Where(g => g.MustVisit == false && g.PlaceId == job.Id).ToList();
-			foreach (var mustNotVisit in mustNotVisits)
+			// There must be at least one valid vehicle remaining, or the problem is unsolvable.
+			if (validVehicles.Count == 0)
 			{
-				var excludedVehicle = Vehicles.Where(v => v.Driver.Id == mustNotVisit.WorkerId).First();
-				Log.Verbose("{excludedVehicle} must not visit {job}", excludedVehicle, job);
-				validVehicles = validVehicles.Except([excludedVehicle]).ToList();
-			}
-			var mustVisit = problem.Guarantees.Where(g => g.MustVisit && g.PlaceId == job.Id).FirstOrDefault();
-			if (null == mustVisit)
-			{
-				// Add disjunctions for any non-guaranteed nodes, allowing them to be skipped at a cost.
-				var penalty = COST_FACTOR_SCALE * 2;
-				Log.Debug("penalty for missing {job}: {penalty}", job, penalty);
-				Routing.AddDisjunction([nodeIndex], penalty);
-			}
-			else
-			{
-				Log.Verbose("{workerId} must visit {placeId}", mustVisit.WorkerId, mustVisit.PlaceId);
-				var requiredVehicle = Vehicles.Where(v => v.Driver.Id == mustVisit.WorkerId).First();
-				Log.Verbose("requiredVehicleId: {requiredVehicleId}", requiredVehicle.Id);
-				validVehicles = validVehicles.Where(v => v.Id == requiredVehicle.Id).ToList();
+				throw new NoViableWorkerException(job);
 			}
 
-			// There must be at least one valid vehicle remaining, or the problem is unsolvable.
-			if (validVehicles.Count.Equals(0))
-			{
-				throw new ApplicationException($"No viable workers found for {job}");
-			}
+			// Set the allowed vehicles for the node.
 			var validVehicleIds = validVehicles.Select(v => v.Id).ToArray();
 			Routing.SetAllowedVehiclesForIndex(validVehicleIds, nodeIndex);
 			Log.Verbose("validVehicleIds for {job}: {validVehicleIds}", job, validVehicleIds);
+
+			// Add disjunctions for any optional nodes, allowing them to be skipped at a cost.
+			if (node.IsSkippable)
+			{
+				var penalty = COST_FACTOR_SCALE * (node.Tasks.Count + 1);
+				Log.Debug("penalty for skipping {node}: {penalty}", node, penalty);
+				Routing.AddDisjunction([nodeIndex], penalty);
+			}
 		}
 	}
 
@@ -742,19 +731,19 @@ public class Solver
 
 	private static bool IsValidTransit(Node fromNode, Node toNode)
 	{
-		var fromTask = fromNode.Tasks.FirstOrDefault();
 		var fromPlace = fromNode.Place;
-		var toTask = toNode.Tasks.FirstOrDefault();
+		var fromTask = fromNode.Tasks.FirstOrDefault();
 		var toPlace = toNode.Place;
+		var toTask = toNode.Tasks.FirstOrDefault();
 
 		// Going to a place with no tasks is always valid.
-		if (toTask is null)
+		if (toPlace is Hub || toTask is null)
 		{
 			return true;
 		}
 
 		// If going to the first task at a place, the worker must be coming from a different place.
-		if (toTask.Order.Equals(0))
+		if (toTask.Order == 0)
 		{
 			return !fromPlace.Equals(toPlace);
 		}
@@ -771,7 +760,11 @@ public class Solver
 	public Solution Solve()
 	{
 		var solution = new Solution();
-		solution.SkippedPlaces.AddRange(Nodes.Select(n => n.Place).Distinct());
+		solution.SkippedJobs.AddRange(Problem.Jobs);
+		foreach (var metric in MetricWeights.Keys)
+		{
+			solution.TotalMetrics[metric] = 0;
+		}
 
 		// Look for a solution!
 		Log.Information("solving problem...");
@@ -784,8 +777,10 @@ public class Solver
 			return solution;
 		}
 
+		solution.TotalCost = assignment.ObjectiveValue();
+		Log.Information("cheapest route found costs {totalCost}", solution.TotalCost);
+
 		// Extract the routes for all vehicles from the solution and determine cost per vehicle.
-		Log.Information("cheapest route found costs {totalCost}", assignment.ObjectiveValue());
 		var transitsByVehicle = new Dictionary<Vehicle, List<(Node a, Node b, long c, long t)>>();
 		var routeEndTimes = new Dictionary<Vehicle, long>();
 		foreach (var vehicle in Vehicles)
@@ -809,64 +804,89 @@ public class Solver
 		foreach (var (vehicle, transits) in transitsByVehicle)
 		{
 			Visit? visit = null;
-			foreach (var (a, b, c, t) in transits)
+			foreach (var (transitIndex, (a, b, c, t)) in transits.Enumerate())
 			{
+				var time = TZero.AddSeconds(t);
+
+				// Accrue all tracked metrics.
+				foreach (var metric in MetricWeights.Keys)
+				{
+					var amount = vehicle.MetricMatrices[metric][a.Id, b.Id];
+					switch (metric.Type)
+					{
+						case MetricType.Distance:
+							amount = ConvertDistance.FromMeters(amount, Problem.DistanceUnit);
+							break;
+						case MetricType.TravelTime:
+						case MetricType.WorkTime:
+							amount = ConvertTime.FromSeconds(amount, Problem.TimeUnit);
+							break;
+					}
+					solution.TotalMetrics[metric] += amount;
+				}
+
 				// Make a new visit as the vehicle arrives at each new place.
-				if (a.Tasks.Any(t => ArrivalTool.Equals(t.Tool)))
+				var leavingStartHub = transitIndex == 0;
+				var leavingPlace = visit is not null && !visit.Place.Equals(a.Place);
+				if (leavingStartHub || leavingPlace)
 				{
 					visit = new Visit
 					{
-						Place = a.Place,
 						Worker = vehicle.Driver,
-						ArrivalTime = TZero.AddSeconds(t),
+						Place = a.Place,
+						ArrivalTime = time,
 					};
+
+					// Only a departure time is necessary when leaving the start hub.
+					if (leavingStartHub)
+					{
+						visit.ArrivalTime = null;
+						visit.DepartureTime = time;
+					}
+
+					// When leaving a job, remove it from the list of skipped ones.
+					if (a.Place is Job job)
+					{
+						solution.SkippedJobs.Remove(job);
+					}
+
 					solution.Visits.Add(visit);
-					solution.SkippedPlaces.Remove(a.Place);
 				}
 
 				// We shouldn't be able to get here without a visit.
 				ArgumentNullException.ThrowIfNull(visit);
 
-				// Record all tasks completed at this node.
+				// Record all tasks completed at this node, and accrue work time.
 				var completions = vehicle.WorkMatrix[a.Id, b.Id];
 				foreach (var completion in completions)
 				{
 					var task = completion.Task;
-					if (!ArrivalTool.Equals(task.Tool))
-					{
-						visit.CompletedTasks.Add(task);
-					}
 					visit.WorkSeconds += completion.WorkSeconds;
 					foreach (var (metric, reward) in completion.EarnedRewards)
 					{
 						visit.EarnedRewards.TryAdd(metric, 0);
 						visit.EarnedRewards[metric] += reward;
 					}
+					visit.CompletedTasks.Add(task);
+				}
+
+				// Update departure time.
+				if (visit.ArrivalTime is not null)
+				{
+					visit.DepartureTime = visit.ArrivalTime.Value.AddSeconds(visit.WorkSeconds);
 				}
 			}
 
-			// Add a visit for the last leg, with enough work time to make the departure time zero.
+			// Add a visit for the last leg, with only an arrival time.
 			var home = new Visit
 			{
-				Place = transits[^1].b.Place,
 				Worker = vehicle.Driver,
+				Place = transits[^1].b.Place,
 				ArrivalTime = TZero.AddSeconds(routeEndTimes[vehicle]),
 			};
-			home.WorkSeconds = -home.ArrivalTime.ToUnixTimeSeconds();
 			solution.Visits.Add(home);
-			solution.SkippedPlaces.Remove(home.Place);
 		}
 
 		return solution;
-	}
-
-	public static void Render(Solution solution, bool pretty = false)
-	{
-		var settings = new JsonSerializerSettings
-		{
-			ContractResolver = new CamelCasePropertyNamesContractResolver(),
-			Formatting = pretty ? Formatting.Indented : Formatting.None,
-		};
-		Console.WriteLine(JsonConvert.SerializeObject(solution.BuildResponse(), settings));
 	}
 }

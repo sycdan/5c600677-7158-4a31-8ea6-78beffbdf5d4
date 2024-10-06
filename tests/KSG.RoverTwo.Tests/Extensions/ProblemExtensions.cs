@@ -1,6 +1,5 @@
 using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Models;
-using KSG.RoverTwo.Tests.Helpers;
 using Build = KSG.RoverTwo.Tests.Helpers.Builder;
 using Task = KSG.RoverTwo.Models.Task;
 
@@ -10,16 +9,13 @@ public static class ProblemExtensions
 {
 	public static Problem WithWorker(this Problem problem, Worker worker)
 	{
-		problem.Workers.Add(worker);
-		return problem;
+		return problem.WithWorkers([worker]);
 	}
 
 	public static Problem WithWorkers(this Problem problem, Worker[] workers)
 	{
-		foreach (var worker in workers)
-		{
-			problem.WithWorker(worker);
-		}
+		problem.Workers.Clear();
+		problem.Workers.AddRange(workers);
 		return problem;
 	}
 
@@ -27,25 +23,46 @@ public static class ProblemExtensions
 	{
 		foreach (var place in places)
 		{
-			if (place.IsHub)
+			if (place is Hub)
 			{
-				problem.WithHub(place);
+				problem.WithAddedHub((place as Hub)!);
 			}
 			else
 			{
-				problem.WithJob(place);
+				problem.WithJob((place as Job)!);
 			}
 		}
 		return problem;
 	}
 
-	public static Problem WithHub(this Problem problem, Place place)
+	/// <summary>
+	/// Replaces all jobs in the problem with the provided ones.
+	/// </summary>
+	/// <param name="problem"></param>
+	/// <param name="jobs"></param>
+	/// <returns></returns>
+	public static Problem WithJobs(this Problem problem, Job[] jobs)
 	{
-		if (!place.IsHub)
-		{
-			throw new ArgumentException($"{nameof(place.Type)} must be {PlaceType.Hub}");
-		}
-		problem.Places.Add(place);
+		problem.Jobs.Clear();
+		problem.Jobs.AddRange(jobs);
+		return problem;
+	}
+
+	public static Problem WithAddedHub(this Problem problem, Hub hub)
+	{
+		problem.Hubs.Add(hub);
+		return problem;
+	}
+
+	public static Problem WithHub(this Problem problem, Hub hub)
+	{
+		return problem.WithHubs([hub]);
+	}
+
+	public static Problem WithHubs(this Problem problem, Hub[] hubs)
+	{
+		problem.Hubs.Clear();
+		problem.Hubs.AddRange(hubs);
 		return problem;
 	}
 
@@ -55,35 +72,51 @@ public static class ProblemExtensions
 		return problem;
 	}
 
-	public static Problem WithJob(this Problem problem, Place place)
+	public static Problem WithJob(this Problem problem, Job job)
 	{
-		if (!place.IsJob)
-		{
-			throw new ArgumentException($"{nameof(place.Type)} must be {PlaceType.Job}");
-		}
-		problem.Places.Add(place);
+		problem.Jobs.Add(job);
 		return problem;
 	}
 
-	public static Place WithTasks(this Place place, Task[] tasks)
+	public static Problem WithIdleTime(this Problem problem, double maxIdleTime)
 	{
-		foreach (var task in tasks)
-		{
-			place.Tasks.Add(task);
-		}
-		return place;
-	}
-
-	public static Problem WithIdleTime(this Problem problem, double maxIdletime)
-	{
-		problem.MaxIdleTime = maxIdletime;
+		problem.MaxIdleTime = maxIdleTime;
 		return problem;
 	}
 
-	public static Worker WithCapability(this Worker worker, Tool tool, double delayFactor = 1)
+	/// <summary>
+	/// Replaces all the job's tasks with the provided ones.
+	/// </summary>
+	/// <param name="job"></param>
+	/// <param name="tasks"></param>
+	/// <returns></returns>
+	public static Job WithTasks(this Job job, Task[] tasks)
 	{
-		worker.Capabilities.Add(new Capability { ToolId = tool.Id, DelayFactor = delayFactor });
+		job.Tasks.Clear();
+		job.Tasks.AddRange(tasks);
+		return job;
+	}
+
+	public static Job WithTask(this Job job, Task task)
+	{
+		return job.WithTasks([task]);
+	}
+
+	public static Worker WithAddedCapability(this Worker worker, Capability capability)
+	{
+		worker.Capabilities.Add(capability);
 		return worker;
+	}
+
+	public static Worker WithAddedCapability(
+		this Worker worker,
+		Tool tool,
+		double? workTime = null,
+		double? completionChance = null
+	)
+	{
+		var capability = Build.Capability(tool.Id, workTime, completionChance);
+		return worker.WithAddedCapability(capability);
 	}
 
 	public static Task WithTool(this Task task, Tool tool)
@@ -93,10 +126,25 @@ public static class ProblemExtensions
 		return task;
 	}
 
-	public static Task WithOptional(this Task task, bool optional)
+	public static Task WithRewards(this Task task, List<Reward> rewards)
 	{
-		task.Optional = optional;
+		task.Rewards = rewards;
 		return task;
+	}
+
+	public static Task WithRewards(this Task task, Dictionary<Metric, double> rewardsByMetric)
+	{
+		var rewards = new List<Reward>();
+		foreach (var (metric, amount) in rewardsByMetric)
+		{
+			rewards.Add(new Reward { MetricId = metric.Id, Amount = amount });
+		}
+		return task.WithRewards(rewards);
+	}
+
+	public static Task WithReward(this Task task, Metric metric, double amount)
+	{
+		return task.WithRewards([new Reward { MetricId = metric.Id, Amount = amount }]);
 	}
 
 	/// <summary>
@@ -106,35 +154,66 @@ public static class ProblemExtensions
 	/// <returns></returns>
 	public static Problem Fill(this Problem problem)
 	{
-		// Ensure there is a hub
-		var hub = problem.Places.FirstOrDefault(p => p.IsHub);
-		if (hub is null)
+		// Ensure there is a job.
+		if (problem.Jobs.Count == 0)
 		{
-			hub = Build.Hub(name: "Home", coordinates: (0, 0));
-			problem.Places.Add(hub);
+			var job = Build.Job();
+			problem.Jobs.Add(job);
 		}
 
-		// Add a worker if there are none
+		// Ensure there is a metric.
+		if (problem.Metrics.Count == 0)
+		{
+			problem.Metrics.Add(Build.Metric(MetricType.Distance));
+		}
+
+		// If there are workers, ensure their hubs exist.
+		foreach (var worker in problem.Workers)
+		{
+			var startHubId = worker.StartHubId;
+			var startHub = problem.Hubs.FirstOrDefault(p => p.Id == startHubId);
+			if (startHub is null)
+			{
+				problem.Hubs.Add(Build.Hub(startHubId));
+			}
+			var endHubId = worker.EndHubId;
+			var endHub = problem.Hubs.FirstOrDefault(p => p.Id == endHubId);
+			if (endHub is null)
+			{
+				problem.Hubs.Add(Build.Hub(endHubId));
+			}
+		}
+
+		// Ensure there is a hub.
+		var hub = problem.Hubs.FirstOrDefault();
+		if (hub is null)
+		{
+			hub = Build.Hub(name: "Hub");
+			problem.Hubs.Add(hub);
+		}
+
+		// Add a worker if there are none.
 		if (problem.Workers.Count == 0)
 		{
-			var worker = Build.Worker(startPlace: hub);
+			var worker = Build.Worker(startHub: hub);
 			problem.Workers.Add(worker);
 		}
 
-		// Add tasks to jobs that have none
-		foreach (var place in problem.Places.Where(p => p.IsJob && p.Tasks.Count == 0))
+		// Add a task to jobs that have none.
+		foreach (var job in problem.Jobs.Where(j => j.Tasks.Count == 0))
 		{
-			var task = Build.Task();
-			place.Tasks.Add(task);
+			var task = Build.Task(name: $"Visit {job}");
+			var tool = Build.Tool($"tool-for-task-{task.Id}");
+			job.Tasks.Add(task.WithTool(tool));
 		}
 
-		// Add tools from tasks
-		foreach (var place in problem.Places)
+		// Add tools from tasks.
+		foreach (var place in problem.Jobs)
 		{
 			foreach (var task in place.Tasks)
 			{
-				// A tool object will take precedence over a tool ID
-				var tool = task.Tool ?? Build.Tool(id: task.ToolId);
+				// A tool object will take precedence over a tool ID.
+				var tool = task.Tool ?? Build.Tool(task.ToolId);
 				if (!problem.Tools.Any(t => t.Id == tool.Id))
 				{
 					problem.Tools.Add(tool);
@@ -142,19 +221,32 @@ public static class ProblemExtensions
 			}
 		}
 
-		// If there are no tools, add a dummy tool
+		// Add tools from capabilities.
+		foreach (var worker in problem.Workers)
+		{
+			foreach (var capability in worker.Capabilities)
+			{
+				var toolId = capability.ToolId;
+				if (!problem.Tools.Any(t => t.Id == toolId))
+				{
+					problem.Tools.Add(Build.Tool(toolId));
+				}
+			}
+		}
+
+		// If there are no tools, add a dummy tool.
 		if (problem.Tools.Count == 0)
 		{
 			var tool = new Tool
 			{
 				Id = Guid.NewGuid().ToString(),
-				Delay = 1,
+				DefaultWorkTime = 1,
 				Name = "Tool",
 			};
 			problem.Tools.Add(tool);
 		}
 
-		// Populate capabilities for each worker for all tools, if they have none
+		// Populate capabilities for each worker for all tools, if they have none.
 		foreach (var worker in problem.Workers.Where(w => w.Capabilities.Count == 0))
 		{
 			foreach (var tool in problem.Tools)
@@ -163,8 +255,8 @@ public static class ProblemExtensions
 			}
 		}
 
-		// Ensure all reward metrics are present and maximized
-		foreach (var place in problem.Places)
+		// Ensure all reward metrics are present and maximized.
+		foreach (var place in problem.Jobs)
 		{
 			foreach (var task in place.Tasks)
 			{

@@ -1,3 +1,6 @@
+using KSG.RoverTwo.Tests.Extensions;
+using Build = KSG.RoverTwo.Tests.Helpers.Builder;
+
 namespace KSG.RoverTwo.Tests;
 
 public class IntegrationTests : TestBase
@@ -5,13 +8,20 @@ public class IntegrationTests : TestBase
 	public IntegrationTests() { }
 
 	[Fact]
-	public void Problem_FromJson_IsSolvable()
+	public void Main_WithSolvableProblemJson_RendersSolution()
 	{
-		var problem = LoadProblemFromFile();
-		var solver = new Solver(problem);
+		using var writer = new StringWriter();
+		Console.SetOut(writer);
 
-		var solution = solver.Solve();
+		var problem = Build.Problem().Fill();
+		var json = problem.Serialize();
+		var tempFile = Path.GetTempFileName();
+		File.WriteAllText(tempFile, json);
+		Program.Main([tempFile]);
+		File.Delete(tempFile);
 
-		Assert.NotNull(solution);
+		var consoleOutput = writer.ToString();
+		Assert.Contains("<Solution>", consoleOutput);
+		Assert.Contains("</Solution>", consoleOutput);
 	}
 }

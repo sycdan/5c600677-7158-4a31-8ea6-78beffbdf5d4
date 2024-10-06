@@ -13,7 +13,18 @@ public class Solution()
 	/// <summary>
 	/// Places that were not visited.
 	/// </summary>
-	public List<Place> SkippedPlaces { get; private init; } = [];
+	public List<Job> SkippedJobs { get; private init; } = [];
+
+	/// <summary>
+	/// The total of each metric accrued from all visits.
+	/// </summary>
+	public Dictionary<Metric, double> TotalMetrics { get; private init; } = [];
+
+	/// <summary>
+	/// The total costs accrued by the solver.
+	/// This is fairly arbitrary, and mostly only useful to rank multiple solutions.
+	/// </summary>
+	public double TotalCost { get; set; }
 
 	/// <summary>
 	/// Builds a response object containing the solution details, fit for serialization.
@@ -25,14 +36,19 @@ public class Solution()
 		{
 			Visits = Visits.Select(v => new
 			{
-				WorkerId = v.Worker.Id,
 				PlaceId = v.Place.Id,
+				WorkerId = v.Worker.Id,
 				v.ArrivalTime,
 				v.DepartureTime,
 				EarnedRewards = v.EarnedRewards.ToDictionary(x => x.Key.Id, x => x.Value),
 				CompletedTasks = v.CompletedTasks.OrderBy(t => t.Order).Select(t => t.Name ?? t.Id),
 			}),
-			SkippedPlaces = SkippedPlaces.Select(p => p.Id),
+			SkippedJobs = SkippedJobs.Select(p => p.Id),
+			TotalMetrics = TotalMetrics.ToDictionary(
+				x => x.Key.Type == Enums.MetricType.Custom ? x.Key.Id : x.Key.Type.ToString(),
+				x => x.Value
+			),
+			TotalCost,
 		};
 	}
 }

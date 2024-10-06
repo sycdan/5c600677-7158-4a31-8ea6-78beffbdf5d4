@@ -7,12 +7,6 @@ public class Vehicle(int id, Worker driver, int matrixSize) : Entity(id)
 	public Worker Driver { get; private init; } = driver;
 
 	/// <summary>
-	/// How many seconds it takes for the driver to use each tool, on average.
-	/// Only tools in the driver's capabilities can be used to complete tasks.
-	/// </summary>
-	public Dictionary<Tool, long> ToolTimes { get; init; } = [];
-
-	/// <summary>
 	/// The actual values for each factor, which will be used to build the cost matrix.
 	/// </summary>
 	public Dictionary<Metric, Matrix<double>> MetricMatrices { get; private init; } = [];

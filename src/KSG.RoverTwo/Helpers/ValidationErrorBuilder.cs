@@ -2,7 +2,7 @@ using System.Text;
 using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Exceptions;
 
-namespace KSG.RoverTwo.Utils;
+namespace KSG.RoverTwo.Helpers;
 
 public class ValidationErrorBuilder(string message = "Validation failed because")
 {
@@ -13,13 +13,18 @@ public class ValidationErrorBuilder(string message = "Validation failed because"
 	public ValidationErrorBuilder AddContext(
 		string field,
 		string separator = DEFAULT_SEPARATOR,
-		bool forceSeparator = false
+		bool forceSeparator = false,
+		bool lowerCamelCase = false
 	)
 	{
 		var prefix = "";
 		if (forceSeparator || Context.Count > 0)
 		{
 			prefix = separator;
+		}
+		if (lowerCamelCase)
+		{
+			field = char.ToLowerInvariant(field[0]) + field[1..];
 		}
 		Context.Add($"{prefix}{field}");
 		return this;
@@ -28,6 +33,11 @@ public class ValidationErrorBuilder(string message = "Validation failed because"
 	public ValidationErrorBuilder AddContext(double value, string separator)
 	{
 		return AddContext(value.ToString(), separator, true);
+	}
+
+	public ValidationErrorBuilder AddContext(int? value, string separator)
+	{
+		return AddContext(value is null ? "" : value.Value.ToString(), separator, true);
 	}
 
 	public ValidationErrorBuilder AddContext(long field, string separator)

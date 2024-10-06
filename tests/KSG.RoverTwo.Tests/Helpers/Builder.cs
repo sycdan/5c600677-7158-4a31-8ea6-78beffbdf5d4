@@ -7,103 +7,114 @@ namespace KSG.RoverTwo.Tests.Helpers;
 public static class Builder
 {
 	internal const string REWARD = "reward";
+	internal const string VISIT_TASK_PREFIX = "visit-task-";
 
-	public static Place Hub(
+	public static Hub Hub(string? id = null, (double x, double y)? coordinates = null, string? name = null)
+	{
+		var hub = new Hub
+		{
+			Id = id ?? Guid.NewGuid().ToString(),
+			Name = name,
+			Location = Location.From(coordinates ?? (0, 0)),
+		};
+		return hub;
+	}
+
+	public static Job Job(
 		string? id = null,
 		(double x, double y)? coordinates = null,
-		Window? window = null,
+		Window? arrivalWindow = null,
+		List<Task>? tasks = null,
+		bool optional = false,
 		string? name = null
 	)
 	{
 		id ??= Guid.NewGuid().ToString();
-		name ??= $"hub:{id}";
-		coordinates ??= (0, 0);
-		window ??= new Window();
-		var place = new Place()
+		arrivalWindow ??= new();
+		tasks ??= [];
+		var job = new Job
 		{
 			Id = id,
 			Name = name,
-			Type = PlaceType.Hub,
-			Location = Location.From(coordinates.Value),
-			ArrivalWindow = window,
-		};
-		return place;
-	}
-
-	public static Place Job(
-		string? id = null,
-		(double x, double y)? coordinates = null,
-		Window? window = null,
-		List<Task>? tasks = null,
-		string? name = null
-	)
-	{
-		var location = coordinates is null ? null : Location.From(coordinates.Value);
-		var arrivalWindow = window is null ? new Window() : window;
-		id ??= Guid.NewGuid().ToString();
-		return new Place()
-		{
-			Id = id,
-			Name = name ?? $"job:{id}",
-			Type = PlaceType.Job,
-			Location = location,
-			Tasks = tasks ?? [],
+			Location = coordinates is null ? null : Location.From(coordinates.Value),
 			ArrivalWindow = arrivalWindow,
+			Optional = optional,
+			Tasks = tasks,
 		};
+		return job;
 	}
 
-	public static Tool Tool(string? id = null, int delay = 1, double completionRate = 1)
+	public static Tool Tool(string? id = null, int defaultWorkTime = 1, double defaultCompletionChance = 1)
 	{
-		return new Tool()
+		var tool = new Tool()
 		{
 			Id = id ?? Guid.NewGuid().ToString(),
-			Delay = delay,
-			CompletionRate = completionRate,
+			DefaultWorkTime = defaultWorkTime,
+			DefaultCompletionChance = defaultCompletionChance,
 		};
+		return tool;
 	}
 
 	public static Worker Worker(
 		string? id = null,
-		Place? startPlace = null,
-		Place? endPlace = null,
-		List<Capability>? capabilities = null
+		Hub? startHub = null,
+		Hub? endHub = null,
+		List<Capability>? capabilities = null,
+		double travelSpeedFactor = 1,
+		DateTimeOffset? earliestStartTime = null,
+		DateTimeOffset? latestEndTime = null
 	)
 	{
-		startPlace ??= Hub();
+		startHub ??= Hub();
 		var worker = new Worker
 		{
 			Id = id ?? Guid.NewGuid().ToString(),
-			StartPlaceId = (startPlace ?? Hub()).Id,
-			EndPlaceId = (endPlace ?? startPlace!).Id,
+			StartHubId = startHub.Id,
+			EndHubId = (endHub ?? startHub).Id,
 			Capabilities = capabilities ?? [],
+			TravelSpeedFactor = travelSpeedFactor,
+			EarliestStartTime = earliestStartTime,
+			LatestEndTime = latestEndTime,
 		};
 		return worker;
 	}
 
-	public static Capability Capability(string toolId, double delayFactor = 1)
+	public static Capability Capability(string toolId, double? workTime = null, double? completionChance = null)
 	{
-		var capability = new Capability { ToolId = toolId, DelayFactor = delayFactor };
+		var capability = new Capability
+		{
+			ToolId = toolId,
+			WorkTime = workTime,
+			CompletionChance = completionChance,
+		};
 		return capability;
 	}
 
-	public static Capability Capability(Tool tool, double delayFactor = 1)
+	public static Capability Capability(Tool tool, double? workTime = null, double? completionChance = null)
 	{
-		return Capability(tool.Id, delayFactor);
+		return Capability(tool.Id, workTime, completionChance);
 	}
 
-	public static Task Task(string? name = null, Tool? tool = null, double reward = 1)
+	public static MetricFactor RewardFactor(string metricId = REWARD, double factor = 1)
+	{
+		return new MetricFactor { MetricId = metricId, Factor = factor };
+	}
+
+	public static Task Task(string? id = null, double reward = 1, bool optional = false, string? name = null)
 	{
 		var rewards = new List<Reward>
 		{
 			new() { MetricId = REWARD, Amount = reward },
 		};
-		return new Task
+		var task = new Task
 		{
-			Name = name ?? Guid.NewGuid().ToString(),
-			Tool = tool,
-			ToolId = tool is null ? Guid.NewGuid().ToString() : tool.Id,
+			Id = id ?? Guid.NewGuid().ToString(),
+			Name = name,
+			ToolId = Guid.NewGuid().ToString(),
 			Rewards = rewards,
+			Optional = optional,
 		};
+		return task;
 	}
 
 	public static Metric Metric(
@@ -129,11 +140,8 @@ public static class Builder
 	}
 
 	public static Problem Problem(
-		DateTimeOffset? tZero = null,
-		string distanceUnit = "Mile",
-		double distanceFactor = 1609.34,
-		string timeUnit = "Hour",
-		double timeFactor = 3600,
+		DistanceUnit distanceUnit = DistanceUnit.Peninkulma,
+		TimeUnit timeUnit = TimeUnit.Hour,
 		double defaultTravelSpeed = 45,
 		double weightDistance = 0,
 		double weightTravelTime = 0,
@@ -143,11 +151,8 @@ public static class Builder
 	{
 		var problem = new Problem()
 		{
-			TZero = tZero ?? DateTimeOffset.UtcNow,
 			TimeUnit = timeUnit,
-			TimeFactor = timeFactor,
 			DistanceUnit = distanceUnit,
-			DistanceFactor = distanceFactor,
 			DefaultTravelSpeed = defaultTravelSpeed,
 		};
 

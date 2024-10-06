@@ -1,24 +1,23 @@
-using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Interfaces;
 
 namespace KSG.RoverTwo.Models;
 
-public class Place : IAmUnique
+public abstract class Place : IAmUnique
 {
-	public string Id { get; init; } = Guid.NewGuid().ToString();
+	public required string Id { get; init; }
 	public string? Name { get; set; }
-	public PlaceType Type { get; init; } = PlaceType.Job;
-	public bool IsHub => PlaceType.Hub.Equals(Type);
-	public bool IsJob => PlaceType.Job.Equals(Type);
+
+	/// <summary>
+	/// The coordinates of the place, for distance calculations.
+	/// If null, the place is considered to require no travel to reach.
+	/// </summary>
 	public Location? Location { get; set; } = null;
-	public Window ArrivalWindow { get; set; } = new();
-	public List<Task> Tasks { get; set; } = [];
 
 	public override string ToString()
 	{
 		if (string.IsNullOrWhiteSpace(Name))
 		{
-			return $"{nameof(Place)}:{Id}";
+			return $"{GetType()}:{Id}";
 		}
 		return Name;
 	}

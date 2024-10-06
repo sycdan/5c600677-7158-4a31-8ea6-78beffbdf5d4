@@ -12,14 +12,14 @@ public class Tool : IAmUnique
 	public string? Name { get; set; }
 
 	/// <summary>
-	/// The base number of time units consumed when using this tool.
+	/// The default number of time units consumed when using this tool.
 	/// </summary>
-	public required double Delay { get; set; }
+	public double DefaultWorkTime { get; set; } = 1;
 
 	/// <summary>
-	/// The rate at which this tool is typically used to complete tasks.
+	/// The default chance this tool will be used to complete a task.
 	/// </summary>
-	public double CompletionRate { get; init; } = 1.0;
+	public double DefaultCompletionChance { get; set; } = 1;
 
 	public override string ToString()
 	{

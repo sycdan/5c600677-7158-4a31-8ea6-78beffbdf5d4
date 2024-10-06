@@ -1,8 +1,8 @@
-using System.Text.Json;
 using CommandLine;
 using KSG.RoverTwo.Exceptions;
 using KSG.RoverTwo.Models;
-using MathNet.Numerics.LinearAlgebra;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using Serilog;
 using Serilog.Core;
 using Serilog.Events;
@@ -13,11 +13,16 @@ public class Program
 {
 	public class Options
 	{
-		[Value(0, Required = true, HelpText = "Path to file containing problem data.")]
+		[Value(0, Required = false, HelpText = "Problem request as JSON.")]
+		public string Json { get; set; } = "";
+
+		[Option('f', "file", HelpText = "Path to file containing problem request data (overrides Json).")]
 		public string File { get; set; } = "";
 
 		[Option('p', "pretty", HelpText = "Use indenting when printing the JSON response.", Default = false)]
 		public bool Pretty { get; set; }
+
+		public bool IsValid => !string.IsNullOrWhiteSpace(Json) || !string.IsNullOrWhiteSpace(File);
 	}
 
 	public static void Main(string[] args)
@@ -27,14 +32,18 @@ public class Program
 		{
 			Parser
 				.Default.ParseArguments<Options>(args)
-				.WithParsed<Options>(o =>
+				.WithParsed(options =>
 				{
-					Log.Debug("Args: {Args}", JsonSerializer.Serialize(o));
-					var problem = LoadData(o.File);
+					Log.Debug("Args: {Args}", JsonConvert.SerializeObject(options));
+					if (!options.IsValid)
+					{
+						Console.WriteLine("Please provide either a JSON string or a file path.");
+						Environment.Exit(1);
+					}
+					var problem = LoadData(options.Json, options.File);
 					var solver = new Solver(problem);
-					var response = solver.Solve();
-					// TODO save response to file
-					Solver.Render(response, o.Pretty);
+					var solution = solver.Solve();
+					RenderSolution(solution, options.Pretty);
 				});
 		}
 		catch (ValidationError ex)
@@ -49,6 +58,18 @@ public class Program
 		{
 			Log.CloseAndFlush();
 		}
+	}
+
+	private static void RenderSolution(Solution solution, bool pretty)
+	{
+		var settings = new JsonSerializerSettings
+		{
+			ContractResolver = new CamelCasePropertyNamesContractResolver(),
+			Formatting = pretty ? Formatting.Indented : Formatting.None,
+		};
+		Console.WriteLine("<Solution>");
+		Console.WriteLine(JsonConvert.SerializeObject(solution.BuildResponse(), settings));
+		Console.WriteLine("</Solution>");
 	}
 
 	private static void Startup()
@@ -66,13 +87,16 @@ public class Program
 		Log.Logger = new LoggerConfiguration().MinimumLevel.ControlledBy(levelSwitch).WriteTo.Console().CreateLogger();
 	}
 
-	private static Problem LoadData(string filePath)
+	private static Problem LoadData(string json, string filePath)
 	{
 		try
 		{
-			Log.Information("loading data from: {FilePath}", filePath);
-			string jsonData = File.ReadAllText(filePath);
-			return Problem.FromJson(jsonData);
+			if (!string.IsNullOrWhiteSpace(filePath))
+			{
+				Log.Information("loading data from: {FilePath}", filePath);
+				json = File.ReadAllText(filePath);
+			}
+			return Problem.FromJson(json);
 		}
 		catch (JsonException ex)
 		{

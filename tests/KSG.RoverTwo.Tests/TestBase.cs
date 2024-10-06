@@ -1,30 +1,21 @@
 using System.Text.Json.Nodes;
-using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Models;
-using Task = KSG.RoverTwo.Models.Task;
+using KSG.RoverTwo.Tests.Extensions;
+using Build = KSG.RoverTwo.Tests.Helpers.Builder;
 
 namespace KSG.RoverTwo.Tests;
 
 public abstract class TestBase
 {
-	internal const string DEFAULT_PROBLEM_DATA_FILE = "vikings.json";
-
-	public static Problem LoadProblemFromFile(string jsonFileName = DEFAULT_PROBLEM_DATA_FILE)
+	/// <summary>
+	/// Creates a new Problem instance with default values.
+	/// </summary>
+	/// <returns></returns>
+	public static Problem BasicProblem()
 	{
-		var json = LoadJsonDataFromFile(jsonFileName);
-		var problem = Problem.FromJson(json.ToString());
+		var hub = Build.Hub(name: "Hub");
+		var job = Build.Job(name: "Job");
+		var problem = Build.Problem().WithAddedHub(hub).WithJob(job);
 		return problem;
-	}
-
-	public static JsonNode LoadJsonDataFromFile(string jsonFileName = DEFAULT_PROBLEM_DATA_FILE)
-	{
-		string jsonFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../../data/", jsonFileName);
-		string jsonData = File.ReadAllText(jsonFilePath);
-		var json = JsonNode.Parse(jsonData);
-		if (null == json)
-		{
-			throw new ApplicationException($"No problem data found in {jsonFileName}");
-		}
-		return json;
 	}
 }

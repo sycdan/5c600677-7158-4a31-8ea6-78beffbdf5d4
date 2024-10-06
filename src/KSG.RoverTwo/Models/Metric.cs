@@ -8,9 +8,9 @@ public class Metric : IAmUnique
 {
 	public string Id { get; init; } = Guid.NewGuid().ToString();
 
+	/// </summary>
 	/// <summary>
 	/// Is this one of the built-in metrics, or a custom metric.
-	/// </summary>
 	public required MetricType Type { get; init; }
 
 	/// <summary>

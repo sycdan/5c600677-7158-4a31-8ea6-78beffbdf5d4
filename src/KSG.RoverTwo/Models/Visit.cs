@@ -15,12 +15,12 @@ public class Visit()
 	/// <summary>
 	/// When the worker is arrives at the place.
 	/// </summary>
-	public required DateTimeOffset ArrivalTime { get; set; }
+	public DateTimeOffset? ArrivalTime { get; set; }
 
 	/// <summary>
 	/// When the worker is expected to depart from the place.
 	/// </summary>
-	public DateTimeOffset DepartureTime => ArrivalTime.AddSeconds(WorkSeconds);
+	public DateTimeOffset? DepartureTime { get; set; }
 
 	/// <summary>
 	/// Which tasks were completed by the worker at the place.
@@ -33,8 +33,7 @@ public class Visit()
 	public Dictionary<Metric, double> EarnedRewards { get; private init; } = [];
 
 	/// <summary>
-	/// How long did the worker spend at the place.
-	/// If there were no tasks, this will be 0.
+	/// Accrued time spent completing tasks at the place.
 	/// </summary>
 	internal long WorkSeconds { get; set; } = 0;
 
