@@ -11,8 +11,9 @@ public static class ConvertDistance
 			{ DistanceUnit.Metre, 1 },
 			{ DistanceUnit.Ell, 1.143 },
 			{ DistanceUnit.Fathom, 1.8288 },
-			{ DistanceUnit.Peninkulma, 6000 },
-			{ DistanceUnit.Rast, 10000 },
+			{ DistanceUnit.Peninkulma, 6_000 },
+			{ DistanceUnit.Rast, 10_000 },
+			{ DistanceUnit.Degree, 111_000 },
 		};
 
 	/// <summary>

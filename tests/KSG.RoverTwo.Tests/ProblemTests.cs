@@ -2,7 +2,7 @@ using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Exceptions;
 using KSG.RoverTwo.Models;
 using KSG.RoverTwo.Tests.Extensions;
-using Build = KSG.RoverTwo.Tests.Helpers.Builder;
+using Build = KSG.RoverTwo.Tests.Helpers.ProblemBuilder;
 using Task = KSG.RoverTwo.Models.Task;
 
 namespace KSG.RoverTwo.Tests;
@@ -16,19 +16,6 @@ public class ProblemTests : TestBase
 		var problem = BasicProblem().Fill();
 		problem.Validate();
 		Assert.True(true);
-	}
-
-	[Fact]
-	public void DistanceFactor_WithOsrm_MustBeOne()
-	{
-		var problem = BasicProblem().Fill();
-		problem.Engine = RoutingEngine.Osrm;
-		problem.DistanceUnit = DistanceUnit.Rast;
-		var exception = Assert.Throws<ValidationError>(() =>
-		{
-			problem.Validate();
-		});
-		Assert.Contains($"distanceUnit must be {DistanceUnit.Metre}", exception.Message);
 	}
 
 	[Fact]
@@ -84,32 +71,6 @@ public class ProblemTests : TestBase
 		Assert.Contains("hubs#0.location is Missing", exception.Message);
 	}
 
-	[Theory]
-	[InlineData(999, 0)]
-	[InlineData(-999, 0)]
-	[InlineData(0, 999)]
-	[InlineData(0, -999)]
-	public void Jobs_WhenEngineIsOsrm_RequiresRealLatLong(double latitude, double longitude)
-	{
-		var problem = BasicProblem().Fill();
-		problem.DistanceUnit = DistanceUnit.Metre;
-		problem.Engine = RoutingEngine.Osrm;
-		var place = problem.Jobs.First();
-		place.Location = new Location() { X = longitude, Y = latitude };
-		var exception = Assert.Throws<ValidationError>(() =>
-		{
-			problem.Validate();
-		});
-		if (longitude < -180 || longitude > 180)
-		{
-			Assert.Contains($"location.x must be in the range of -180 to 180", exception.Message);
-		}
-		if (latitude < -90 || latitude > 90)
-		{
-			Assert.Contains($"location.y must be in the range of -90 to 90", exception.Message);
-		}
-	}
-
 	[Fact]
 	public void Job_WithoutTasks_FailsValidation()
 	{
@@ -127,7 +88,7 @@ public class ProblemTests : TestBase
 	public void Task_WithDuplicateId_FailsValidation()
 	{
 		var tool = Build.Tool();
-		var problem = BasicProblem().WithTool(tool);
+		var problem = BasicProblem().WithAddedTool(tool);
 		var firstTask = Build.Task();
 		var secondTask = new Task()
 		{
@@ -254,7 +215,7 @@ public class ProblemTests : TestBase
 	public void Tools_NegativeDefaultWorkTime_FailsValidation()
 	{
 		var tool = Build.Tool(defaultWorkTime: -1);
-		var problem = Build.Problem().WithTool(tool).Fill();
+		var problem = Build.Problem().WithAddedTool(tool).Fill();
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
 			problem.Validate();
@@ -266,7 +227,7 @@ public class ProblemTests : TestBase
 	public void Tools_NegativeDefaultCompletionChance_FailsValidation()
 	{
 		var tool = Build.Tool(defaultCompletionChance: -1);
-		var problem = Build.Problem().WithTool(tool).Fill();
+		var problem = Build.Problem().WithAddedTool(tool).Fill();
 		var exception = Assert.Throws<ValidationError>(() =>
 		{
 			problem.Validate();
@@ -403,7 +364,7 @@ public class ProblemTests : TestBase
 		var capability = Build.Capability(tool.Id);
 		var worker = Build.Worker().WithAddedCapability(capability);
 
-		problem.WithTool(tool).WithWorker(worker).Fill().Validate();
+		problem.WithAddedTool(tool).WithWorker(worker).Fill().Validate();
 
 		Assert.Equal(tool.DefaultWorkTime, capability.WorkTime);
 	}
@@ -430,7 +391,7 @@ public class ProblemTests : TestBase
 		var capability = Build.Capability(tool.Id);
 		var worker = Build.Worker().WithAddedCapability(capability);
 
-		problem.WithTool(tool).WithWorker(worker).Fill().Validate();
+		problem.WithAddedTool(tool).WithWorker(worker).Fill().Validate();
 
 		Assert.Equal(tool.DefaultCompletionChance, capability.CompletionChance);
 	}

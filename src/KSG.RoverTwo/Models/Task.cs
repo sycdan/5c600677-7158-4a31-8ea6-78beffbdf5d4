@@ -12,12 +12,6 @@ public class Task : IAmUnique
 	public string? Name { get; set; }
 
 	/// <summary>
-	/// The order in which the tasks should be completed.
-	/// Defaults to the task's index in the list.
-	/// </summary>
-	public int? Order { get; set; }
-
-	/// <summary>
 	/// Set during validation.
 	/// </summary>
 	internal Job? Job { get; set; }

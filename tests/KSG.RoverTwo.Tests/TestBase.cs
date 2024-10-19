@@ -1,7 +1,7 @@
 using System.Text.Json.Nodes;
 using KSG.RoverTwo.Models;
 using KSG.RoverTwo.Tests.Extensions;
-using Build = KSG.RoverTwo.Tests.Helpers.Builder;
+using Build = KSG.RoverTwo.Tests.Helpers.ProblemBuilder;
 
 namespace KSG.RoverTwo.Tests;
 

@@ -1,6 +1,6 @@
 using KSG.RoverTwo.Enums;
 using KSG.RoverTwo.Models;
-using Build = KSG.RoverTwo.Tests.Helpers.Builder;
+using Build = KSG.RoverTwo.Tests.Helpers.ProblemBuilder;
 using Task = KSG.RoverTwo.Models.Task;
 
 namespace KSG.RoverTwo.Tests.Extensions;
@@ -66,7 +66,14 @@ public static class ProblemExtensions
 		return problem;
 	}
 
-	public static Problem WithTool(this Problem problem, Tool tool)
+	public static Problem WithTools(this Problem problem, Tool[] tool)
+	{
+		problem.Tools.Clear();
+		problem.Tools.AddRange(tool);
+		return problem;
+	}
+
+	public static Problem WithAddedTool(this Problem problem, Tool tool)
 	{
 		problem.Tools.Add(tool);
 		return problem;
@@ -102,6 +109,20 @@ public static class ProblemExtensions
 		return job.WithTasks([task]);
 	}
 
+	public static Worker WithCapabilities(this Worker worker, Capability[] capabilities)
+	{
+		worker.Capabilities.Clear();
+		worker.Capabilities.AddRange(capabilities);
+		return worker;
+	}
+
+	public static Worker WithCapabilities(this Worker worker, Tool[] tools)
+	{
+		worker.Capabilities.Clear();
+		worker.Capabilities.AddRange(tools.Select(t => Build.Capability(t)));
+		return worker;
+	}
+
 	public static Worker WithAddedCapability(this Worker worker, Capability capability)
 	{
 		worker.Capabilities.Add(capability);
@@ -112,10 +133,16 @@ public static class ProblemExtensions
 		this Worker worker,
 		Tool tool,
 		double? workTime = null,
-		double? completionChance = null
+		double workTimeFactor = 1,
+		double? completionChance = null,
+		double rewardFactor = 1
 	)
 	{
-		var capability = Build.Capability(tool.Id, workTime, completionChance);
+		var capability = Build.Capability(tool.Id, workTime, completionChance, workTimeFactor);
+		if (rewardFactor != 1)
+		{
+			capability.RewardFactors.Add(new MetricFactor { Factor = rewardFactor, MetricId = "reward" });
+		}
 		return worker.WithAddedCapability(capability);
 	}
 

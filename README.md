@@ -56,4 +56,3 @@ To implement worker break times, you can add a "break tool" to each worker, and 
 ## TODO
 
 - experiment with coefficients to decrease distance between best and worst route costs (reduce idle vehicles)
-- implement OSRM routing engine, with caching

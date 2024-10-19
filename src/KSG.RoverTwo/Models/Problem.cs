@@ -24,7 +24,7 @@ public class Problem
 	public double DefaultTravelSpeed { get; set; } = 20;
 
 	/// <summary>
-	/// The unit of measurement expected to be returned by the routing engine.
+	/// The unit of measurement used in <see cref="Distances"/>>.
 	/// </summary>
 	public DistanceUnit DistanceUnit { get; set; } = DistanceUnit.Metre;
 
@@ -37,11 +37,6 @@ public class Problem
 	/// Number of time units a worker can wait at a place for its time window to open.
 	/// </summary>
 	public double MaxIdleTime { get; set; } = 0;
-
-	/// <summary>
-	/// Whether to use the simple routing engine (for testing purposes) or a real one.
-	/// </summary>
-	public RoutingEngine Engine { get; set; } = RoutingEngine.Simple;
 
 	/// <summary>
 	/// All possible places at which the workers may start or end their route.
@@ -62,7 +57,7 @@ public class Problem
 		get
 		{
 			return Metrics.Any(cf => MetricType.Distance.Equals(cf.Type))
-				|| (Metrics.Any(cf => MetricType.TravelTime.Equals(cf.Type)) && RoutingEngine.Simple.Equals(Engine));
+				|| Metrics.Any(cf => MetricType.TravelTime.Equals(cf.Type));
 		}
 	}
 	internal bool IsTravelTimeMatrixRequired
@@ -81,6 +76,39 @@ public class Problem
 	public List<Worker> Workers { get; set; } = [];
 
 	/// <summary>
+	/// Precalculated distances between each place (hub or job) and each other place (excluding the place itself).
+	/// If omitted, distances will be calculated using the Manhattan method.
+	/// e.g.
+	/// {
+	/// 	"hub1":
+	/// 	{
+	/// 		"hub2": 1,
+	/// 		"job1": 2,
+	/// 		"job2": 3,
+	/// 	},
+	/// 	"hub2":
+	/// 	{
+	/// 		"hub1": 1,
+	/// 		"job1": 4,
+	/// 		"job2": 5,
+	/// 	},
+	/// 	"job1":
+	/// 	{
+	/// 		"hub1": 2,
+	/// 		"hub2": 4,
+	/// 		"job2": 6,
+	/// 	},
+	/// 	"job2":
+	/// 	{
+	/// 		"hub1": 3,
+	/// 		"hub2": 5,
+	/// 		"job1": 6,
+	/// 	}
+	/// }
+	/// </summary>
+	public Dictionary<string, Dictionary<string, double>>? Distances { get; set; }
+
+	/// <summary>
 	/// Every primary object in the problem, keyed by its unique ID.
 	/// </summary>
 	internal Dictionary<string, IAmUnique> ValidatedEntitiesById { get; private init; } = [];
@@ -96,7 +124,7 @@ public class Problem
 	}
 
 	/// <summary>
-	/// Serializes the problem to a JSON string.
+	/// Serializes the problem to a one-line JSON string.
 	/// </summary>
 	/// <returns></returns>
 	public string Serialize()
@@ -160,8 +188,6 @@ public class Problem
 			return this;
 		}
 
-		ValidateDistanceUnit();
-
 		// Order is important here
 		ValidateTools();
 		ValidateMetrics();
@@ -169,18 +195,6 @@ public class Problem
 		ValidateWorkers();
 
 		return this;
-	}
-
-	private void ValidateDistanceUnit()
-	{
-		var distanceUnit = DistanceUnit;
-		ErrorBuilder.AddContext(nameof(distanceUnit));
-		var meters = ConvertDistance.ToMeters(1, distanceUnit);
-		if (RoutingEngine.Osrm.Equals(Engine) && meters != 1)
-		{
-			throw ErrorBuilder.Build($"must be {DistanceUnit.Metre} for {nameof(RoutingEngine.Osrm)}");
-		}
-		ErrorBuilder.PopContext();
 	}
 
 	private void ValidateTools()
@@ -283,25 +297,6 @@ public class Problem
 			throw ErrorBuilder.Build(ValidationErrorType.Missing);
 		}
 
-		if (location is not null)
-		{
-			Log.Verbose("{place} @ {location}", place, location);
-			var x = location.X;
-			var y = location.Y;
-			if (RoutingEngine.Osrm.Equals(Engine))
-			{
-				// Validate longitude.
-				if (x < -180 || x > 180)
-				{
-					throw ErrorBuilder.AddContext(nameof(x)).Build($"must be in the range of -180 to 180");
-				}
-				// Validate latitude.
-				if (y < -90 || y > 90)
-				{
-					throw ErrorBuilder.AddContext(nameof(y)).Build($"must be in the range of -90 to 90");
-				}
-			}
-		}
 		ErrorBuilder.PopContext();
 	}
 
@@ -315,9 +310,6 @@ public class Problem
 		ErrorBuilder.AddContext(nameof(tasks));
 		EnsureSome(tasks);
 
-		// If any order is set, then all must be.
-		var doesAnyTaskHaveOrder = tasks.Where(t => t.Order is not null).Any();
-
 		// Validate the tasks.
 		foreach (var (taskIndex, task) in tasks.Enumerate())
 		{
@@ -329,19 +321,6 @@ public class Problem
 			// Ensure the tool exists and add it to the task.
 			var toolId = task.ToolId;
 			task.Tool = EnsureEntityExists<Tool>(toolId, nameof(toolId));
-
-			// Ensure the visit task comes first, and set any orders that were not provided.
-			var order = task.Order;
-			ErrorBuilder.AddContext(nameof(order));
-			if (doesAnyTaskHaveOrder)
-			{
-				EnsurePresent(order);
-			}
-			else
-			{
-				task.Order = taskIndex;
-			}
-			ErrorBuilder.PopContext();
 
 			// Every user-defined task must have at least one valid reward.
 			var rewards = task.Rewards;

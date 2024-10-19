@@ -4,7 +4,7 @@ using Task = KSG.RoverTwo.Models.Task;
 
 namespace KSG.RoverTwo.Tests.Helpers;
 
-public static class Builder
+public static class ProblemBuilder
 {
 	internal const string REWARD = "reward";
 	internal const string VISIT_TASK_PREFIX = "visit-task-";
@@ -79,13 +79,19 @@ public static class Builder
 		return worker;
 	}
 
-	public static Capability Capability(string toolId, double? workTime = null, double? completionChance = null)
+	public static Capability Capability(
+		string toolId,
+		double? workTime = null,
+		double? completionChance = null,
+		double workTimeFactor = 1
+	)
 	{
 		var capability = new Capability
 		{
 			ToolId = toolId,
 			WorkTime = workTime,
 			CompletionChance = completionChance,
+			WorkTimeFactor = workTimeFactor,
 		};
 		return capability;
 	}

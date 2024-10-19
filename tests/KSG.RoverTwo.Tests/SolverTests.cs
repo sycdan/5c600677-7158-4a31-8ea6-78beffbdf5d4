@@ -2,13 +2,90 @@ using KSG.RoverTwo.Exceptions;
 using KSG.RoverTwo.Extensions;
 using KSG.RoverTwo.Models;
 using KSG.RoverTwo.Tests.Extensions;
-using Build = KSG.RoverTwo.Tests.Helpers.Builder;
+using Build = KSG.RoverTwo.Tests.Helpers.ProblemBuilder;
 
 namespace KSG.RoverTwo.Tests;
 
 public class SolverTests : TestBase
 {
 	public SolverTests() { }
+
+	private Problem BuildVikingProblem()
+	{
+		var tZero = new DateTimeOffset(1997, 08, 29, 0, 0, 0, -new TimeSpan(7, 0, 0));
+
+		var sword1 = Build.Tool("gladius", 45);
+		var sword2 = Build.Tool("zweihander", 60);
+		var axe1 = Build.Tool("hatchet", 30);
+		var axe2 = Build.Tool("greataxe", 75);
+		var punch = Build.Tool("punch", 90);
+		var taunt = Build.Tool("taunt", 15);
+
+		var hub1 = Build.Hub("valhalla", (0, 100));
+		var hub2 = Build.Hub("folkvangr", (0, 200));
+		var hub3 = Build.Hub("bifrost", (0, 300));
+		var hub4 = Build.Hub("hel", (0, 400));
+
+		var job1 = Build
+			.Job("gnipahellir", (100, 0), Window.From(tZero.AddHours(1), 9 * 3600))
+			.WithTasks(
+				[
+					Build.Task("boop-the-snoot", 10, optional: true).WithTool(punch),
+					Build.Task("draw-first-blood", 100, optional: false).WithTool(sword1),
+					Build.Task("slay-the-house", 1000, optional: true).WithTool(sword2),
+				]
+			);
+		var job2 = Build
+			.Job("vigrid", (200, 0), Window.From(tZero.AddHours(6), 600))
+			.WithTasks(
+				[
+					Build.Task("slay-the-giant", 200, optional: false).WithTool(axe2),
+					Build.Task("slay-the-ogre", 100, optional: true).WithTool(sword2),
+					Build.Task("insult-loki", 300, optional: true).WithTool(taunt),
+				]
+			);
+		var job3 = Build
+			.Job("forest", (300, 0), Window.From(tZero.AddHours(7), tZero.AddHours(22)), optional: true)
+			.WithTasks(
+				[
+					Build.Task("gather-firewood", 50, optional: true).WithTool(axe1),
+					Build.Task("exterminate-giant-spiders", 150, optional: false).WithTool(sword1),
+				]
+			);
+
+		var viking1 = Build
+			.Worker("ragnar", startHub: hub1, earliestStartTime: tZero.AddHours(4), latestEndTime: tZero.AddHours(9))
+			.WithAddedCapability(axe1, 10, rewardFactor: 2)
+			.WithAddedCapability(sword1, rewardFactor: 0.5)
+			.WithAddedCapability(sword2, workTimeFactor: 1.2, rewardFactor: 0.6)
+			.WithAddedCapability(punch, workTimeFactor: 0.75);
+		var viking2 = Build
+			.Worker("floki", startHub: hub1, endHub: hub2, travelSpeedFactor: 1.2)
+			.WithAddedCapability(axe2, workTimeFactor: 2)
+			.WithAddedCapability(sword2, workTimeFactor: 2.5)
+			.WithAddedCapability(taunt, workTimeFactor: 0.5);
+		var viking3 = Build
+			.Worker("leif", startHub: hub3, endHub: hub4, travelSpeedFactor: 0.5, latestEndTime: tZero.AddHours(11))
+			.WithAddedCapability(axe1, workTimeFactor: 0.9)
+			.WithAddedCapability(taunt, workTimeFactor: 1.6);
+
+		var problem = Build
+			.Problem(
+				defaultTravelSpeed: 50,
+				distanceUnit: Enums.DistanceUnit.Fathom,
+				timeUnit: Enums.TimeUnit.Minute,
+				weightDistance: 100,
+				weightTravelTime: 100,
+				weightWorkTime: 100,
+				weightReward: 500
+			)
+			.WithTools([axe1, axe2, sword1, sword2, punch, taunt])
+			.WithHubs([hub1, hub2, hub3, hub4])
+			.WithJobs([job1, job2, job3])
+			.WithWorkers([viking1, viking2, viking3]);
+
+		return problem.Fill();
+	}
 
 	[Fact]
 	public void EquidistantJobs_DifferentRewards_HigherRewardIsPicked()
@@ -24,7 +101,7 @@ public class SolverTests : TestBase
 		var otherJob = Build.Job("low-reward-job", (1, 0), jobWindow, optional: true).WithTasks([loRewardTask]);
 		var problem = Build
 			.Problem(weightTravelTime: 1, weightWorkTime: 1, weightReward: 1)
-			.WithTool(tool)
+			.WithAddedTool(tool)
 			.WithPlaces([hub, targetJob, otherJob])
 			.WithWorker(Build.Worker("bob", hub, hub, capabilities: [Build.Capability(tool.Id)]));
 		var solver = new Solver(problem);
@@ -109,6 +186,24 @@ public class SolverTests : TestBase
 
 		// Second task to first task is invalid.
 		Assert.NotEqual(0, matrix[2, 1]);
+	}
+
+	[Fact]
+	public void Solve_WithVeryLongDistanceToOptionalJob_PreventsCompletingTasksAtJob()
+	{
+		var problem = BuildVikingProblem();
+		var fromJob = problem.Jobs.First(j => j.Id == "gnipahellir");
+		var toJob = problem.Jobs.First(j => j.Id == "forest");
+		problem.Distances = new()
+		{
+			{
+				fromJob.Id,
+				new() { { toJob.Id, 9999 } }
+			},
+		};
+		var solver = new Solver(problem);
+		var solution = solver.Solve();
+		Assert.Contains(toJob, solution.SkippedJobs);
 	}
 
 	[Fact]
@@ -270,5 +365,29 @@ public class SolverTests : TestBase
 			v.EarnedRewards.Where(kvp => kvp.Key == breakMetric).Sum(kvp => kvp.Value)
 		);
 		Assert.Equal(30, breakMinutes);
+	}
+
+	[Fact]
+	public void Solve_WhenDistancesAreProvided_UsesProvidedDistances()
+	{
+		var problem = Build.Problem(distanceUnit: Enums.DistanceUnit.Metre, weightDistance: 1).Fill();
+		var hubId = problem.Hubs[0].Id;
+		var jobId = problem.Jobs[0].Id;
+		problem.Distances = [];
+		problem.Distances.Add(hubId, []);
+		problem.Distances[hubId][jobId] = 9999;
+		var solver = new Solver(problem);
+		Assert.Equal(problem.Distances[hubId][jobId], solver.DistanceMatrix[0, 1]);
+	}
+
+	[Fact]
+	public void Solve_WhenDistancesAreNotProvided_ComputesManhattanDistances()
+	{
+		var problem = Build.Problem(distanceUnit: Enums.DistanceUnit.Metre, weightDistance: 1).Fill();
+		problem.Hubs[0].Location = Location.From((1, 1));
+		problem.Jobs[0].Location = Location.From((2, 2));
+		var expectedDistance = problem.Hubs[0].Location!.ManhattanDistanceTo(problem.Jobs[0].Location!);
+		var solver = new Solver(problem);
+		Assert.Equal(expectedDistance, solver.DistanceMatrix[0, 1]);
 	}
 }

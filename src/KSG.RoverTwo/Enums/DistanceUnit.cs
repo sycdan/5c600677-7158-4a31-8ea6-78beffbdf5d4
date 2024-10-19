@@ -41,4 +41,11 @@ public enum DistanceUnit
 	/// Equivalent to 10,000 <see cref="Meter"/>.
 	/// </summary>
 	Rast,
+
+	/// <summary>
+	/// Can be used when location coordinates are given as long/lat.
+	/// Should not be relied upon for accuracy.
+	/// Equivalent to 111,000 <see cref="Meter"/>.
+	/// </summary>
+	Degree,
 }

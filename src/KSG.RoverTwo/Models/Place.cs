@@ -17,7 +17,7 @@ public abstract class Place : IAmUnique
 	{
 		if (string.IsNullOrWhiteSpace(Name))
 		{
-			return $"{GetType()}:{Id}";
+			return $"{GetType().Name}:{Id}";
 		}
 		return Name;
 	}

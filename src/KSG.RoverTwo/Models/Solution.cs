@@ -41,7 +41,7 @@ public class Solution()
 				v.ArrivalTime,
 				v.DepartureTime,
 				EarnedRewards = v.EarnedRewards.ToDictionary(x => x.Key.Id, x => x.Value),
-				CompletedTasks = v.CompletedTasks.OrderBy(t => t.Order).Select(t => t.Name ?? t.Id),
+				CompletedTasks = v.CompletedTasks.Select(t => t.Name ?? t.Id),
 			}),
 			SkippedJobs = SkippedJobs.Select(p => p.Id),
 			TotalMetrics = TotalMetrics.ToDictionary(

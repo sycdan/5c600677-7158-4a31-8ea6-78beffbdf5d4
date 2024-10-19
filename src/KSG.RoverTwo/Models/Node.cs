@@ -5,7 +5,7 @@ namespace KSG.RoverTwo.Models;
 /// <summary>
 /// An entity that can be visited.
 /// </summary>
-/// <param name="id"></param>
+/// <param name="id">Determines completion sequence for multi-node jobs.</param>
 /// <param name="place"></param>
 /// <param name="tasks"></param>
 /// <param name="timeWindow"></param>
@@ -19,22 +19,23 @@ public class Node(
 ) : Entity(id)
 {
 	/// <summary>
-	/// The hub or job this node represents.
+	/// The <see cref="Hub"/> or <see cref="Job"/> this node represents.
 	/// </summary>
 	public Place Place { get; private init; } = place;
 
 	/// <summary>
-	/// Is the place a hub? If so, it cannot be a job.
+	/// Is the place a <see cref="Hub"/>? If so, it cannot be a <see cref="Job"/>.
 	/// </summary>
 	public bool IsHub => Place is Hub;
 
 	/// <summary>
-	/// Is the place a job? If so, it cannot be a hub.
+	/// Is the place a <see cref="Job"/>? If so, it cannot be a <see cref="Hub"/>.
 	/// </summary>
 	public bool IsJob => Place is Job;
 
 	/// <summary>
 	/// The time window in which the node can be visited, in seconds.
+	/// Only set for the first node of a <see cref="Job"/>.
 	/// </summary>
 	public (long Open, long Close)? TimeWindow { get; init; } = timeWindow;
 
@@ -44,7 +45,7 @@ public class Node(
 	public List<Task> Tasks { get; private init; } = tasks;
 
 	/// <summary>
-	/// Can this node be skipped by all vehicles without failing the solution?
+	/// Can this node be skipped by all <see cref="Vehicle"/>s without failing the solution?
 	/// </summary>
 	public bool IsSkippable { get; set; } = skippable;
 

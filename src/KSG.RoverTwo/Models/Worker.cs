@@ -61,12 +61,6 @@ public class Worker : IAmUnique
 	/// </summary>
 	internal Dictionary<Tool, Capability> CapabilitiesByTool { get; private init; } = [];
 
-	/// <summary>
-	/// Costs incurred when transiting to specific locations, by metric and place.
-	/// </summary>
-	public List<VisitCost> VisitCosts { get; set; } = [];
-	internal Dictionary<Metric, Dictionary<Job, double>> VisitCostsByMetric { get; private init; } = [];
-
 	public override string ToString()
 	{
 		if (string.IsNullOrWhiteSpace(Name))
