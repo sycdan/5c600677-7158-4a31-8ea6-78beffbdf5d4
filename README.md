@@ -53,6 +53,14 @@ If you want to make certain places visitable by only one worker, you can add a "
 
 To implement worker break times, you can add a "break tool" to each worker, and a "job" with a task that requires it. If you do not specify a location for the job, it will have 0 distance to all nodes, thus can be reached easily from anywhere when it fits best into the solution. The job's arrival window can be larger than the amount of work time required to use the tool, for added flexibility.
 
+## Running
+
+There is a sample json input file in the `docs` directory.
+
+```bash
+dotnet run --project src/KSG.RoverTwo/KSG.RoverTwo.csproj "$(cat docs/vikings.json)" --pretty
+```
+
 ## TODO
 
 - experiment with coefficients to decrease distance between best and worst route costs (reduce idle vehicles)

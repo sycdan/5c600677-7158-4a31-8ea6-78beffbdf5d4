@@ -1,0 +1,323 @@
+{
+	"defaultTravelSpeed": 50,
+	"distanceUnit": "Fathom",
+	"timeUnit": "Minute",
+	"hubs": [
+		{
+			"id": "valhalla",
+			"name": "Odin's Mead Hall",
+			"type": "Hub",
+			"location": {
+				"x": 0.0,
+				"y": 100.0
+			}
+		},
+		{
+			"id": "folkvangr",
+			"name": "Freyja's Meadow",
+			"type": "Hub",
+			"location": {
+				"x": 0.0,
+				"y": 200.0
+			}
+		},
+		{
+			"id": "bifrost",
+			"name": "Rainbow Road",
+			"type": "Hub",
+			"location": {
+				"x": 0.0,
+				"y": 300.0
+			}
+		},
+		{
+			"id": "hel",
+			"name": "The Underworld",
+			"type": "Hub",
+			"location": {
+				"x": 0.0,
+				"y": 400.0
+			}
+		}
+	],
+	"jobs": [
+		{
+			"id": "gnipahellir",
+			"name": "Gnipa Cave",
+			"location": {
+				"x": 100.0,
+				"y": 0.0
+			},
+			"arrivalWindow": {
+				"open": "1997-08-29T01:00:00-07:00",
+				"close": "1997-08-29T10:00:00-07:00"
+			},
+			"tasks": [
+				{
+					"id": "snoot",
+					"name": "Boop the snoot",
+					"toolId": "punch",
+					"optional": true,
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 10
+						}
+					]
+				},
+				{
+					"id": "blood",
+					"name": "Draw first blood",
+					"toolId": "sword1",
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 100
+						}
+					]
+				},
+				{
+					"id": "hound",
+					"name": "Slay the hound",
+					"toolId": "sword2",
+					"optional": true,
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 1000
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "vigrid",
+			"name": "The Great Plain",
+			"location": {
+				"x": 200.0,
+				"y": 0.0
+			},
+			"arrivalWindow": {
+				"open": "1997-08-29T06:00:00-07:00",
+				"close": "1997-08-29T06:10:00-07:00"
+			},
+			"tasks": [
+				{
+					"id": "giant",
+					"name": "Slay the giant",
+					"toolId": "axe2",
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 200
+						}
+					]
+				},
+				{
+					"id": "ogre",
+					"name": "Slay the ogre",
+					"toolId": "sword2",
+					"optional": true,
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 100
+						}
+					]
+				},
+				{
+					"id": "loki",
+					"name": "Insult Loki",
+					"toolId": "taunt",
+					"optional": true,
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 300
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "forest",
+			"name": "The Forest of Doom",
+			"location": {
+				"x": 300.0,
+				"y": 0.0
+			},
+			"optional": true,
+			"arrivalWindow": {
+				"open": "1997-08-29T07:00:00-07:00",
+				"close": "1997-08-29T22:00:00-07:00"
+			},
+			"tasks": [
+				{
+					"id": "firewood",
+					"name": "Gather firewood",
+					"toolId": "axe1",
+					"optional": true,
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 50
+						}
+					]
+				},
+				{
+					"id": "spiders",
+					"name": "Exterminate giant spiders",
+					"toolId": "sword1",
+					"rewards": [
+						{
+							"metricId": "glory",
+							"amount": 150
+						}
+					]
+				}
+			]
+		}
+	],
+	"distances": {},
+	"workers": [
+		{
+			"id": "viking1",
+			"name": "Ragnar",
+			"startHubId": "valhalla",
+			"earliestStartTime": "1997-08-29T04:00:00-07:00",
+			"latestEndTime": "1997-08-29T09:00:00-07:00",
+			"endHubId": "valhalla",
+			"capabilities": [
+				{
+					"toolId": "sword1",
+					"rewardFactors": [
+						{
+							"metricId": "glory",
+							"factor": 0.5
+						}
+					]
+				},
+				{
+					"toolId": "axe1",
+					"workTime": 10,
+					"rewardFactors": [
+						{
+							"metricId": "glory",
+							"factor": 2
+						}
+					]
+				},
+				{
+					"toolId": "sword2",
+					"workTimeFactor": 1.2,
+					"rewardFactors": [
+						{
+							"metricId": "glory",
+							"factor": 0.6
+						}
+					]
+				},
+				{
+					"toolId": "punch",
+					"workTimeFactor": 0.75
+				}
+			]
+		},
+		{
+			"id": "viking2",
+			"name": "Floki",
+			"startHubId": "valhalla",
+			"endHubId": "folkvangr",
+			"travelSpeedFactor": 1.2,
+			"capabilities": [
+				{
+					"toolId": "axe2",
+					"workTimeFactor": 2
+				},
+				{
+					"toolId": "sword2",
+					"workTimeFactor": 2.5
+				},
+				{
+					"toolId": "taunt",
+					"workTimeFactor": 0.5
+				}
+			]
+		},
+		{
+			"id": "viking3",
+			"name": "Leif",
+			"startHubId": "bifrost",
+			"endHubId": "hel",
+			"latestEndTime": "1997-08-29T11:11:11-07:00",
+			"travelSpeedFactor": 0.5,
+			"capabilities": [
+				{
+					"toolId": "axe1",
+					"workTimeFactor": 0.9
+				},
+				{
+					"toolId": "taunt",
+					"workTimeFactor": 1.6
+				}
+			]
+		}
+	],
+	"tools": [
+		{
+			"id": "sword1",
+			"name": "Gladius",
+			"defaultWorkTime": 45
+		},
+		{
+			"id": "sword2",
+			"name": "Zweihander",
+			"defaultWorkTime": 60,
+			"defaultCompletionChance": 0.95
+		},
+		{
+			"id": "axe1",
+			"name": "Hatchet",
+			"defaultWorkTime": 30
+		},
+		{
+			"id": "axe2",
+			"name": "Greataxe",
+			"defaultWorkTime": 75,
+			"defaultCompletionChance": 0.94
+		},
+		{
+			"id": "punch",
+			"defaultWorkTime": 90,
+			"defaultCompletionChance": 0.92
+		},
+		{
+			"id": "taunt",
+			"defaultWorkTime": 15,
+			"defaultCompletionChance": 0.93
+		}
+	],
+	"metrics": [
+		{
+			"type": "Distance",
+			"mode": "Minimize",
+			"weight": 100
+		},
+		{
+			"type": "TravelTime",
+			"mode": "Minimize",
+			"weight": 100
+		},
+		{
+			"type": "WorkTime",
+			"mode": "Minimize",
+			"weight": 100
+		},
+		{
+			"id": "glory",
+			"type": "Custom",
+			"mode": "Maximize",
+			"weight": 500
+		}
+	]
+}
